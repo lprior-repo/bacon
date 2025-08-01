@@ -1,0 +1,45 @@
+{
+  "CheckCacheForRecentScrape": {
+    "Type": "Task",
+    "Comment": "Check DynamoDB cache for recent scrape data",
+    "Resource": "arn:aws:states:::aws-sdk:dynamodb:getItem",
+    "QueryLanguage": "JSONata",
+    "Arguments": {
+      "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+      "Key": {
+        "pk": {"S": "{% 'SCRAPE_CACHE#' & $accountId %}"},
+        "sk": {"S": "{% $serviceType & '#LATEST' %}"}
+      },
+      "ConsistentRead": true
+    },
+    "Output": "{% $merge([$states.input, {'cacheResult': $states.result}]) %}",
+    "Catch": [
+      {
+        "ErrorEquals": ["States.ALL"],
+        "Output": "{% $merge([$states.input, {'cacheError': $states.errorOutput, 'proceedWithScrape': true}]) %}",
+        "Next": "${NEXT_STATE_ON_ERROR}"
+      }
+    ],
+    "Next": "EvaluateCacheAge"
+  },
+  "EvaluateCacheAge": {
+    "Type": "Choice",
+    "Comment": "Determine if cached data is recent enough to skip scraping",
+    "QueryLanguage": "JSONata",
+    "Choices": [
+      {
+        "Condition": "{% $exists($states.input.cacheResult.Item) and ($millis() - $number($states.input.cacheResult.Item.lastScraped.S)) < ${CACHE_TTL_MS} %}",
+        "Output": "{% {'useCache': true, 'cachedData': $states.input.cacheResult.Item} %}",
+        "Next": "ReturnCachedResults"
+      }
+    ],
+    "Default": "${NEXT_STATE_ON_CACHE_MISS}"
+  },
+  "ReturnCachedResults": {
+    "Type": "Pass",
+    "Comment": "Return cached data without performing fresh scrape",
+    "QueryLanguage": "JSONata",
+    "Output": "{% {'source': 'cache', 'data': $parse($states.input.cachedData.${DATA_FIELD}.S), 'timestamp': $states.input.cachedData.lastScraped.S, 'scraperId': $states.input.scraperId} %}",
+    "End": true
+  }
+}

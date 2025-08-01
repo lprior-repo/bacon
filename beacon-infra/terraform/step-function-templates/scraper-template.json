@@ -1,0 +1,50 @@
+{
+  "Comment": "Complete ${SERVICE_TYPE} scraper using reusable patterns",
+  "StartAt": "InitializeScraper",
+  "States": {
+    "InitializeScraper": {
+      "Type": "Pass",
+      "Comment": "Initialize scraper with common configuration",
+      "QueryLanguage": "JSONata",
+      "Output": "{% $merge([$states.input, {'serviceType': '${SERVICE_TYPE}', 'resourceType': '${RESOURCE_TYPE}', 'scraperId': 'scraper-' & $now(), 'startTime': $now()}]) %}",
+      "Next": "CheckCacheForRecentScrape"
+    },
+    ${CACHE_PATTERN},
+    ${RESOURCE_EXPLORER_PATTERN},
+    "EnrichResourcesWithDetails": {
+      "Type": "Task",
+      "Comment": "Call Lambda to enrich resource data with detailed information",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "FunctionName": "{% $states.input.enrichmentLambdaArn %}",
+        "Payload": "{% $merge([$states.input, {'resources': $states.input.discoveredResources}]) %}"
+      },
+      "Output": "{% $merge([$states.input, {'data': $states.result.Payload.data, 'summary': $states.result.Payload.summary}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'enrichmentError': $states.errorOutput, 'data': {'resources': $states.input.discoveredResources}}]) %}",
+          "Next": "StoreResultsInDynamoDB"
+        }
+      ],
+      "Next": "StoreResultsInDynamoDB"
+    },
+    ${DYNAMODB_STORAGE_PATTERN},
+    ${NEPTUNE_UPDATE_PATTERN},
+    "FinalizeScraperResults": {
+      "Type": "Pass",
+      "Comment": "Finalize scraper execution with summary",
+      "QueryLanguage": "JSONata",
+      "Output": "{% {'scraperId': $states.input.scraperId, 'serviceType': $states.input.serviceType, 'status': 'completed', 'resourceCount': $count($states.input.data.resources), 'duration': $now() - $states.input.startTime, 'cacheStored': $states.input.cacheStored, 'neptuneQueued': $states.input.neptuneQueued} %}",
+      "End": true
+    },
+    "HandleExplorerError": {
+      "Type": "Pass",
+      "Comment": "Handle Resource Explorer errors gracefully",
+      "QueryLanguage": "JSONata",
+      "Output": "{% {'scraperId': $states.input.scraperId, 'serviceType': $states.input.serviceType, 'status': 'failed', 'error': $states.input.explorerError, 'resourceCount': 0} %}",
+      "End": true
+    }
+  }
+}

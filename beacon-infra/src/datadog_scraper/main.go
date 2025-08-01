@@ -15,7 +15,6 @@ import (
     "github.com/aws/aws-sdk-go-v2/service/dynamodb"
     "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
     "github.com/aws/aws-xray-sdk-go/xray"
-    "github.com/aws/aws-xray-sdk-go/xrayhttp"
 )
 
 type DatadogEvent struct {
@@ -97,7 +96,7 @@ func fetchDatadogMetrics(ctx context.Context, metricName, timeRange string) (*Da
     req.Header.Set("DD-APPLICATION-KEY", appKey)
     req.Header.Set("Content-Type", "application/json")
 
-    client := xrayhttp.Client(&http.Client{Timeout: 30 * time.Second})
+    client := &http.Client{Timeout: 30 * time.Second}
     resp, err := client.Do(req)
     if err != nil {
         seg.AddError(err)
