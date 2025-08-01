@@ -6,13 +6,13 @@ resource "aws_neptune_cluster" "main" {
   cluster_identifier              = local.neptune_cluster_name
   engine                         = "neptune"
   engine_version                 = "1.3.3.0"
-  backup_retention_period        = var.env == "prod" ? 7 : 1
+  backup_retention_period        = var.namespace == "prod" ? 7 : 1
   preferred_backup_window        = "07:00-09:00"
   preferred_maintenance_window   = "sun:05:00-sun:06:00"
   
   # Serverless configuration
   serverless_v2_scaling_configuration {
-    max_capacity = var.env == "prod" ? 16.0 : 4.0
+    max_capacity = var.namespace == "prod" ? 16.0 : 4.0
     min_capacity = 0.5
   }
 
@@ -30,9 +30,9 @@ resource "aws_neptune_cluster" "main" {
   iam_database_authentication_enabled = true
   
   # Deletion protection and backup
-  deletion_protection = var.env == "prod"
-  skip_final_snapshot = var.env != "prod"
-  final_snapshot_identifier = var.env == "prod" ? "${local.neptune_cluster_name}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
+  deletion_protection = var.namespace == "prod"
+  skip_final_snapshot = var.namespace != "prod"
+  final_snapshot_identifier = var.namespace == "prod" ? "${local.neptune_cluster_name}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
 
   # Logging configuration
   enable_cloudwatch_logs_exports = [
@@ -41,7 +41,7 @@ resource "aws_neptune_cluster" "main" {
   ]
 
   # Apply changes immediately in non-production environments
-  apply_immediately = var.env != "prod"
+  apply_immediately = var.namespace != "prod"
 
   tags = merge(local.common_tags, {
     Name = local.neptune_cluster_name
@@ -89,7 +89,7 @@ resource "aws_neptune_cluster_parameter_group" "main" {
 # KMS Key for Neptune encryption
 resource "aws_kms_key" "neptune" {
   description             = "KMS key for Neptune database encryption"
-  deletion_window_in_days = var.env == "prod" ? 30 : 7
+  deletion_window_in_days = var.namespace == "prod" ? 30 : 7
   enable_key_rotation     = true
 
   policy = jsonencode({
@@ -140,7 +140,7 @@ resource "aws_kms_alias" "neptune" {
 # CloudWatch Log Groups for Neptune
 resource "aws_cloudwatch_log_group" "neptune_audit" {
   name              = "/aws/neptune/${local.neptune_cluster_name}/audit"
-  retention_in_days = var.env == "prod" ? 30 : 14
+  retention_in_days = var.namespace == "prod" ? 30 : 14
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-neptune-audit-logs"
@@ -150,7 +150,7 @@ resource "aws_cloudwatch_log_group" "neptune_audit" {
 
 resource "aws_cloudwatch_log_group" "neptune_slowquery" {
   name              = "/aws/neptune/${local.neptune_cluster_name}/slowquery"
-  retention_in_days = var.env == "prod" ? 30 : 14
+  retention_in_days = var.namespace == "prod" ? 30 : 14
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-neptune-slowquery-logs"

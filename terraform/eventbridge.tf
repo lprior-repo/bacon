@@ -83,7 +83,7 @@ module "eventbridge" {
   tags = merge(local.common_tags, {
     Name        = "${local.name_prefix}-eventbridge"
     Service     = "eventbridge"
-    Environment = var.env
+    Environment = var.namespace
   })
 }
 
@@ -181,7 +181,7 @@ resource "aws_iam_role_policy" "step_function_logs_policy" {
 
 # CloudWatch alarms for monitoring EventBridge rules
 resource "aws_cloudwatch_metric_alarm" "eventbridge_failed_invocations" {
-  count = var.env == "prod" ? 1 : 0
+  count = var.namespace == "prod" ? 1 : 0
 
   alarm_name          = "${local.name_prefix}-eventbridge-failed-invocations"
   comparison_operator = "GreaterThanThreshold"

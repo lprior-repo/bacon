@@ -8,10 +8,10 @@ module "github_secrets" {
   description = "GitHub API token for scraping repository data"
 
   # Enable rotation for production environments
-  rotation_enabled = var.env == "prod"
+  rotation_enabled = var.namespace == "prod"
 
   # Automatic rotation configuration (30 days for production)
-  rotation_rules = var.env == "prod" ? [
+  rotation_rules = var.namespace == "prod" ? [
     {
       automatically_after_days = 30
     }
@@ -38,14 +38,14 @@ module "github_secrets" {
   ]
 
   # Replica configuration for cross-region disaster recovery
-  replica = var.env == "prod" ? {
+  replica = var.namespace == "prod" ? {
     region = "us-west-2"
   } : {}
 
   tags = merge(local.common_tags, {
     Name        = "${local.name_prefix}-github-api-token"
     SecretType  = "github-api"
-    Rotation    = var.env == "prod" ? "enabled" : "disabled"
+    Rotation    = var.namespace == "prod" ? "enabled" : "disabled"
   })
 }
 
@@ -58,10 +58,10 @@ module "datadog_secrets" {
   description = "Datadog API key for metrics and monitoring integration"
 
   # Enable rotation for production environments
-  rotation_enabled = var.env == "prod"
+  rotation_enabled = var.namespace == "prod"
 
   # Automatic rotation configuration (90 days for production)
-  rotation_rules = var.env == "prod" ? [
+  rotation_rules = var.namespace == "prod" ? [
     {
       automatically_after_days = 90
     }
@@ -88,14 +88,14 @@ module "datadog_secrets" {
   ]
 
   # Replica configuration for cross-region disaster recovery
-  replica = var.env == "prod" ? {
+  replica = var.namespace == "prod" ? {
     region = "us-west-2"
   } : {}
 
   tags = merge(local.common_tags, {
     Name        = "${local.name_prefix}-datadog-api-key"
     SecretType  = "datadog-api"
-    Rotation    = var.env == "prod" ? "enabled" : "disabled"
+    Rotation    = var.namespace == "prod" ? "enabled" : "disabled"
   })
 }
 

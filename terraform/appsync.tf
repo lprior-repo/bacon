@@ -294,7 +294,7 @@ resource "aws_appsync_resolver" "delete_project" {
 # CloudWatch Log Group for AppSync
 resource "aws_cloudwatch_log_group" "appsync" {
   name              = "/aws/appsync/apis/${aws_appsync_graphql_api.main.id}"
-  retention_in_days = var.env == "prod" ? 30 : 14
+  retention_in_days = var.namespace == "prod" ? 30 : 14
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-appsync-logs"

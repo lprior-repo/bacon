@@ -64,7 +64,7 @@ module "beacon_orchestrator_step_function" {
 # CloudWatch Log Group for Step Functions
 resource "aws_cloudwatch_log_group" "step_functions" {
   name              = "/aws/stepfunctions/${local.name_prefix}-orchestrator"
-  retention_in_days = var.env == "prod" ? 30 : 14
+  retention_in_days = var.namespace == "prod" ? 30 : 14
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-stepfunctions-logs"

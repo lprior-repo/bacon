@@ -1,5 +1,5 @@
-# Environment Configuration
-env          = "dev"
+# Namespace Configuration (replaces environment concept)
+namespace    = "dev"
 aws_region   = "us-east-1"
 project_name = "beacon"
 

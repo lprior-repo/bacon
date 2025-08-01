@@ -29,7 +29,7 @@ module "scraper_queue" {
   tags = merge(local.common_tags, {
     Name        = "${local.name_prefix}-scraper-queue"
     QueueType   = "scraper-tasks"
-    Environment = var.env
+    Environment = var.namespace
   })
 }
 
@@ -51,7 +51,7 @@ module "scraper_dlq" {
   tags = merge(local.common_tags, {
     Name        = "${local.name_prefix}-scraper-dlq"
     QueueType   = "dead-letter"
-    Environment = var.env
+    Environment = var.namespace
   })
 }
 
@@ -82,7 +82,7 @@ module "processing_queue" {
   tags = merge(local.common_tags, {
     Name        = "${local.name_prefix}-processing-queue"
     QueueType   = "processing-results"
-    Environment = var.env
+    Environment = var.namespace
   })
 }
 
@@ -104,7 +104,7 @@ module "processing_dlq" {
   tags = merge(local.common_tags, {
     Name        = "${local.name_prefix}-processing-dlq"
     QueueType   = "dead-letter"
-    Environment = var.env
+    Environment = var.namespace
   })
 }
 
@@ -138,7 +138,7 @@ resource "aws_iam_role_policy" "lambda_sqs_policy" {
 
 # CloudWatch alarms for queue monitoring
 resource "aws_cloudwatch_metric_alarm" "scraper_queue_dlq_alarm" {
-  count = var.env == "prod" ? 1 : 0
+  count = var.namespace == "prod" ? 1 : 0
 
   alarm_name          = "${local.name_prefix}-scraper-dlq-messages"
   comparison_operator = "GreaterThanThreshold"
@@ -159,7 +159,7 @@ resource "aws_cloudwatch_metric_alarm" "scraper_queue_dlq_alarm" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "processing_queue_dlq_alarm" {
-  count = var.env == "prod" ? 1 : 0
+  count = var.namespace == "prod" ? 1 : 0
 
   alarm_name          = "${local.name_prefix}-processing-dlq-messages"
   comparison_operator = "GreaterThanThreshold"
