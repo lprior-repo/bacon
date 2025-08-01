@@ -43,126 +43,126 @@ func main() {
 }
 
 func handleDatadogScrapeRequest(ctx context.Context, event DatadogEvent) (DatadogResponse, error) {
-    ctx, seg := xray.BeginSubsegment(ctx, "datadog-scraper-handler")
-    defer seg.Close(nil)
-
-    seg.AddAnnotation("metric_name", event.MetricName)
-    seg.AddAnnotation("time_range", event.TimeRange)
-
-    metrics, err := fetchDatadogMetrics(ctx, event.MetricName, event.TimeRange)
-    if err != nil {
-        seg.AddError(err)
-        return createErrorResponse(err.Error()), err
-    }
-
-    err = storeMetricsData(ctx, metrics)
-    if err != nil {
-        seg.AddError(err)
-        return createErrorResponse(fmt.Sprintf("failed to store metrics: %v", err)), err
-    }
-
-    seg.AddMetadata("metrics_data", map[string]interface{}{
-        "point_count": len(metrics.Points),
-        "metric_name": metrics.MetricName,
+    return withTracedOperation(ctx, "datadog-scraper-handler", func(tracedCtx context.Context) (DatadogResponse, error) {
+        // Functional pipeline for processing
+        result := processDatadogEvent(tracedCtx, event)
+        if result.IsFailure() {
+            return createErrorResponse(result.Error.Error()), result.Error
+        }
+        
+        return createSuccessResponse("Datadog metrics scraped successfully"), nil
     })
-
-    return createSuccessResponse("Datadog metrics scraped successfully"), nil
 }
 
-func fetchDatadogMetrics(ctx context.Context, metricName, timeRange string) (*DatadogMetric, error) {
-    ctx, seg := xray.BeginSubsegment(ctx, "fetch-datadog-metrics")
-    defer seg.Close(nil)
+// Pure functions for building Datadog requests
+func buildDatadogURL(metricName, timeRange string) string {
+    return fmt.Sprintf("https://api.datadoghq.com/api/v1/query?query=%s&from=%s&to=now", metricName, timeRange)
+}
 
+func getDatadogCredentials() (string, string, error) {
     apiKey := os.Getenv("DATADOG_API_KEY")
     appKey := os.Getenv("DATADOG_APP_KEY")
     
     if apiKey == "" || appKey == "" {
-        err := fmt.Errorf("missing Datadog API credentials")
-        seg.AddError(err)
-        return nil, err
+        return "", "", fmt.Errorf("missing Datadog API credentials")
     }
+    
+    return apiKey, appKey, nil
+}
 
-    url := fmt.Sprintf("https://api.datadoghq.com/api/v1/query?query=%s&from=%s&to=now", 
-                      metricName, timeRange)
-    seg.AddAnnotation("datadog_url", url)
-
+func createDatadogRequest(ctx context.Context, url, apiKey, appKey string) (*http.Request, error) {
     req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
     if err != nil {
-        seg.AddError(err)
         return nil, fmt.Errorf("failed to create request: %w", err)
     }
-
+    
     req.Header.Set("DD-API-KEY", apiKey)
     req.Header.Set("DD-APPLICATION-KEY", appKey)
     req.Header.Set("Content-Type", "application/json")
+    
+    return req, nil
+}
 
-    client := &http.Client{Timeout: 30 * time.Second}
-    resp, err := client.Do(req)
-    if err != nil {
-        seg.AddError(err)
-        return nil, fmt.Errorf("failed to fetch metrics: %w", err)
-    }
+func decodeDatadogResponse(resp *http.Response) (*DatadogMetric, error) {
     defer resp.Body.Close()
-
-    seg.AddAnnotation("response_status", resp.StatusCode)
-
+    
     var result struct {
         Series []DatadogMetric `json:"series"`
     }
-
+    
     if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-        seg.AddError(err)
         return nil, fmt.Errorf("failed to decode response: %w", err)
     }
-
+    
     if len(result.Series) == 0 {
-        err := fmt.Errorf("no metrics found")
-        seg.AddError(err)
-        return nil, err
+        return nil, fmt.Errorf("no metrics found")
     }
-
+    
     return &result.Series[0], nil
 }
 
-func storeMetricsData(ctx context.Context, metric *DatadogMetric) error {
-    ctx, seg := xray.BeginSubsegment(ctx, "store-metrics-data")
-    defer seg.Close(nil)
+func fetchDatadogMetrics(ctx context.Context, metricName, timeRange string) (*DatadogMetric, error) {
+    return withTracedSubsegment(ctx, "fetch-datadog-metrics", func(tracedCtx context.Context, seg *xray.Segment) (*DatadogMetric, error) {
+        apiKey, appKey, err := getDatadogCredentials()
+        if err != nil {
+            return nil, err
+        }
+        
+        url := buildDatadogURL(metricName, timeRange)
+        seg.AddAnnotation("datadog_url", url)
+        
+        req, err := createDatadogRequest(tracedCtx, url, apiKey, appKey)
+        if err != nil {
+            return nil, err
+        }
+        
+        client := &http.Client{Timeout: 30 * time.Second}
+        resp, err := client.Do(req)
+        if err != nil {
+            return nil, fmt.Errorf("failed to fetch metrics: %w", err)
+        }
+        
+        seg.AddAnnotation("response_status", resp.StatusCode)
+        
+        return decodeDatadogResponse(resp)
+    })
+}
 
-    cfg, err := config.LoadDefaultConfig(ctx)
-    if err != nil {
-        seg.AddError(err)
-        return fmt.Errorf("failed to load AWS config: %w", err)
+// Pure function for creating metric items
+func createMetricItem(metricName string, point Point) map[string]types.AttributeValue {
+    return map[string]types.AttributeValue{
+        "metric_name": &types.AttributeValueMemberS{Value: metricName},
+        "timestamp":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", point.Timestamp)},
+        "value":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", point.Value)},
+        "scraped_at":  &types.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
     }
+}
 
-    client := dynamodb.NewFromConfig(cfg)
+func getMetricsTableName() string {
     tableName := os.Getenv("DYNAMODB_TABLE")
     if tableName == "" {
-        tableName = "datadog-metrics"
+        return "datadog-metrics"
     }
+    return tableName
+}
 
-    seg.AddAnnotation("table_name", tableName)
-    seg.AddAnnotation("point_count", len(metric.Points))
-
-    for _, point := range metric.Points {
-        item := map[string]types.AttributeValue{
-            "metric_name": &types.AttributeValueMemberS{Value: metric.MetricName},
-            "timestamp":   &types.AttributeValueMemberN{Value: fmt.Sprintf("%d", point.Timestamp)},
-            "value":       &types.AttributeValueMemberN{Value: fmt.Sprintf("%.2f", point.Value)},
-            "scraped_at":  &types.AttributeValueMemberS{Value: time.Now().UTC().Format(time.RFC3339)},
-        }
-
-        _, err = client.PutItem(ctx, &dynamodb.PutItemInput{
-            TableName: aws.String(tableName),
-            Item:      item,
-        })
-
+func storeMetricsData(ctx context.Context, metric *DatadogMetric) error {
+    return withTracedSubsegment(ctx, "store-metrics-data", func(tracedCtx context.Context, seg *xray.Segment) error {
+        cfg, err := config.LoadDefaultConfig(tracedCtx)
         if err != nil {
-            seg.AddError(err)
-            return fmt.Errorf("failed to store metric point: %w", err)
+            return fmt.Errorf("failed to load AWS config: %w", err)
         }
-    }
-
-    return nil
+        
+        client := dynamodb.NewFromConfig(cfg)
+        tableName := getMetricsTableName()
+        
+        seg.AddAnnotation("table_name", tableName)
+        seg.AddAnnotation("point_count", len(metric.Points))
+        
+        // Functional approach: map points to storage operations
+        storeOperations := mapPointsToStoreOperations(metric.Points, metric.MetricName)
+        return executeStoreOperations(tracedCtx, client, tableName, storeOperations)
+    })
 }
 
 func createSuccessResponse(message string) DatadogResponse {
