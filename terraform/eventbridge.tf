@@ -23,11 +23,6 @@ module "eventbridge" {
       state              = "ENABLED"
     }
     
-    aws_scraper_schedule = {
-      description         = "Trigger AWS scraper on schedule"
-      schedule_expression = "rate(2 hours)"  # Run every 2 hours
-      state              = "ENABLED"
-    }
     
     processor_schedule = {
       description         = "Trigger data processor on schedule"
@@ -68,20 +63,6 @@ module "eventbridge" {
       }
     ]
     
-    aws_scraper_schedule = [
-      {
-        name            = "TriggerAwsScraper"
-        arn             = aws_sfn_state_machine.scraper_workflow.arn
-        role_arn        = aws_iam_role.eventbridge_role.arn
-        input_transformer = {
-          input_paths = {}
-          input_template = jsonencode({
-            scraper_type = "aws"
-            timestamp    = "<aws.events.event.ingestion-time>"
-          })
-        }
-      }
-    ]
     
     processor_schedule = [
       {

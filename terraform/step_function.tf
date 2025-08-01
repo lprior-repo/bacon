@@ -10,7 +10,6 @@ module "beacon_orchestrator_step_function" {
   definition = templatefile("${path.module}/templates/step_function_definition.json.tpl", {
     github_scraper_arn     = local.lambda_functions.github_scraper.arn
     datadog_scraper_arn    = local.lambda_functions.datadog_scraper.arn
-    aws_scraper_arn        = local.lambda_functions.aws_scraper.arn
     codeowners_scraper_arn = local.lambda_functions.codeowners_scraper.arn
     openshift_scraper_arn  = local.lambda_functions.openshift_scraper.arn
     processor_arn          = local.lambda_functions.processor.arn
@@ -22,7 +21,6 @@ module "beacon_orchestrator_step_function" {
       lambda = [
         local.lambda_functions.github_scraper.arn,
         local.lambda_functions.datadog_scraper.arn,
-        local.lambda_functions.aws_scraper.arn,
         local.lambda_functions.codeowners_scraper.arn,
         local.lambda_functions.openshift_scraper.arn,
         local.lambda_functions.processor.arn
@@ -59,7 +57,6 @@ module "beacon_orchestrator_step_function" {
     aws_cloudwatch_log_group.step_functions,
     module.github_scraper_lambda,
     module.datadog_scraper_lambda,
-    module.aws_scraper_lambda,
     module.processor_lambda
   ]
 }
