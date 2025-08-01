@@ -3,7 +3,7 @@ package common
 import (
 	"context"
 
-	"github.com/aws/aws-xray-sdk-go/xray"
+	"github.com/aws/aws-xray-sdk-go/v2/xray"
 )
 
 func WithTracing(ctx context.Context, segmentName string, fn func(context.Context) error) error {

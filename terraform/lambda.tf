@@ -1,43 +1,50 @@
 # Lambda Functions Configuration for Beacon Project
 # This file defines all Lambda functions using terraform-aws-modules/lambda/aws
 
-# GitHub Scraper Lambda Function
+# GitHub Scraper Lambda Function - Serverless-first design
 module "github_scraper_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
-  version = "~> 7.0"
+  version = "~> 7.13"
 
   function_name = "${local.name_prefix}-github-scraper"
   description   = "Scrapes GitHub repository data and metadata"
-  handler       = "main"
+  handler       = "bootstrap"
   runtime       = "provided.al2023"
-  architectures = ["x86_64"]
+  architectures = ["arm64"] # ARM64 for 20% better price/performance
 
-  source_path = "${path.module}/src/github_scraper"
+  # Source path pointing to actual Go lambda location
+  source_path = "../src/code-analysis/lambda/github-scraper"
 
-  # Build configuration for Go
-  build_in_docker = true
-  docker_image    = "public.ecr.aws/sam/build-go1.x:latest"
+  # Serverless-first build configuration
+  create_package = false
+  local_existing_package = "../src/code-analysis/lambda/github-scraper/main.zip"
 
-  # Runtime configuration
-  timeout     = 300
-  memory_size = 512
+  # Optimized runtime configuration
+  timeout                        = 300
+  memory_size                    = 512
+  reserved_concurrent_executions = 10 # Prevent runaway costs
 
-  # VPC configuration
-  vpc_subnet_ids         = local.private_subnet_ids
-  vpc_security_group_ids = [local.security_groups.lambda]
+  # Enhanced ephemeral storage for Go builds
+  ephemeral_storage_size = 1024 # 1GB /tmp space
+
+  # VPC configuration with IPv6 support
+  vpc_subnet_ids                  = local.private_subnet_ids
+  vpc_security_group_ids         = [local.security_groups.lambda]
+  vpc_config_ipv6_allowed_for_dual_stack = true
 
   # Environment variables
   environment_variables = {
-    DYNAMODB_TABLE = module.dynamodb_table.dynamodb_table_id
-    S3_BUCKET      = module.s3_bucket.s3_bucket_id
-    LOG_LEVEL      = "INFO"
+    DYNAMODB_TABLE    = module.dynamodb_table.dynamodb_table_id
+    S3_BUCKET         = module.s3_bucket.s3_bucket_id
+    LOG_LEVEL         = "INFO"
+    AWS_LAMBDA_EXEC_WRAPPER = "/opt/otel-instrument" # OTEL tracing
   }
 
   # IAM role configuration
   create_role = false
   lambda_role = local.iam_roles.lambda_scraper
 
-  # Permissions for Secrets Manager
+  # Enhanced permissions
   attach_policy_statements = true
   policy_statements = {
     secrets_manager = {
@@ -49,20 +56,53 @@ module "github_scraper_lambda" {
         "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${local.name_prefix}/github/*"
       ]
     }
+    xray_tracing = {
+      effect = "Allow"
+      actions = [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords"
+      ]
+      resources = ["*"]
+    }
   }
 
-  # CloudWatch Logs configuration
+  # CloudWatch Logs with JSON formatting
   cloudwatch_logs_retention_in_days = 14
+  cloudwatch_logs_log_group_class   = "STANDARD"
+  
+  # Advanced logging configuration
+  logging_config = {
+    log_format            = "JSON"
+    application_log_level = "INFO"
+    system_log_level      = "WARN"
+  }
 
   # X-Ray tracing
   tracing_config_mode = "Active"
 
-  # Dead letter queue
-  dead_letter_target_arn = module.github_scraper_dlq.queue_arn
+  # SnapStart for faster cold starts (Java/Python only, but future-proofing)
+  snap_start = var.environment == "prod" ? "PublishedVersions" : null
+
+  # Event invoke configuration for resilience
+  maximum_event_age_in_seconds = 300
+  maximum_retry_attempts       = 2
+  
+  # Destination configuration
+  destination_on_failure = aws_sqs_queue.github_scraper_dlq.arn
+  destination_on_success = aws_sns_topic.lambda_success.arn
+
+  # Publish version for blue/green deployments
+  publish = true
+  
+  # Create alias for deployment strategies  
+  create_current_version_alias = true
+  current_version_alias_name   = "current"
 
   tags = merge(local.common_tags, {
     Function = "github-scraper"
     Type     = "data-scraper"
+    Runtime  = "go"
+    Arch     = "arm64"
   })
 }
 
@@ -91,43 +131,50 @@ module "github_scraper_dlq" {
   })
 }
 
-# DataDog Scraper Lambda Function
+# DataDog Scraper Lambda Function - Serverless-first design
 module "datadog_scraper_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
-  version = "~> 7.0"
+  version = "~> 7.13"
 
   function_name = "${local.name_prefix}-datadog-scraper"
   description   = "Scrapes DataDog metrics and monitoring data"
-  handler       = "main"
+  handler       = "bootstrap"
   runtime       = "provided.al2023"
-  architectures = ["x86_64"]
+  architectures = ["arm64"] # ARM64 for better price/performance
 
-  source_path = "${path.module}/src/datadog_scraper"
+  # Source path pointing to actual Go lambda location
+  source_path = "../src/external-integrations/lambda/datadog-scraper"
 
-  # Build configuration for Go
-  build_in_docker = true
-  docker_image    = "public.ecr.aws/sam/build-go1.x:latest"
+  # Serverless-first build configuration
+  create_package = false
+  local_existing_package = "../src/external-integrations/lambda/datadog-scraper/main.zip"
 
-  # Runtime configuration
-  timeout     = 300
-  memory_size = 512
+  # Optimized runtime configuration
+  timeout                        = 300
+  memory_size                    = 512
+  reserved_concurrent_executions = 10
 
-  # VPC configuration
-  vpc_subnet_ids         = local.private_subnet_ids
-  vpc_security_group_ids = [local.security_groups.lambda]
+  # Enhanced ephemeral storage
+  ephemeral_storage_size = 1024
+
+  # VPC configuration with IPv6 support
+  vpc_subnet_ids                         = local.private_subnet_ids
+  vpc_security_group_ids                 = [local.security_groups.lambda]
+  vpc_config_ipv6_allowed_for_dual_stack = true
 
   # Environment variables
   environment_variables = {
-    DYNAMODB_TABLE = module.dynamodb_table.dynamodb_table_id
-    S3_BUCKET      = module.s3_bucket.s3_bucket_id
-    LOG_LEVEL      = "INFO"
+    DYNAMODB_TABLE          = module.dynamodb_table.dynamodb_table_id
+    S3_BUCKET               = module.s3_bucket.s3_bucket_id
+    LOG_LEVEL               = "INFO"
+    AWS_LAMBDA_EXEC_WRAPPER = "/opt/otel-instrument"
   }
 
   # IAM role configuration
   create_role = false
   lambda_role = local.iam_roles.lambda_scraper
 
-  # Permissions for Secrets Manager
+  # Enhanced permissions
   attach_policy_statements = true
   policy_statements = {
     secrets_manager = {
@@ -139,20 +186,48 @@ module "datadog_scraper_lambda" {
         "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${local.name_prefix}/datadog/*"
       ]
     }
+    xray_tracing = {
+      effect = "Allow"
+      actions = [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords"
+      ]
+      resources = ["*"]
+    }
   }
 
-  # CloudWatch Logs configuration
+  # CloudWatch Logs with JSON formatting
   cloudwatch_logs_retention_in_days = 14
+  cloudwatch_logs_log_group_class   = "STANDARD"
+  
+  # Advanced logging configuration
+  logging_config = {
+    log_format            = "JSON"
+    application_log_level = "INFO"
+    system_log_level      = "WARN"
+  }
 
   # X-Ray tracing
   tracing_config_mode = "Active"
 
-  # Dead letter queue
-  dead_letter_target_arn = module.datadog_scraper_dlq.queue_arn
+  # Event invoke configuration for resilience
+  maximum_event_age_in_seconds = 300
+  maximum_retry_attempts       = 2
+  
+  # Destination configuration
+  destination_on_failure = aws_sqs_queue.datadog_scraper_dlq.arn
+  destination_on_success = aws_sns_topic.lambda_success.arn
+
+  # Publish version for deployment strategies
+  publish = true
+  create_current_version_alias = true
+  current_version_alias_name   = "current"
 
   tags = merge(local.common_tags, {
     Function = "datadog-scraper"
     Type     = "data-scraper"
+    Runtime  = "go"
+    Arch     = "arm64"
   })
 }
 
@@ -190,15 +265,15 @@ module "processor_lambda" {
 
   function_name = "${local.name_prefix}-processor"
   description   = "Processes scraped data and stores it in Neptune graph database"
-  handler       = "main"
+  handler       = "bootstrap"
   runtime       = "provided.al2023"
-  architectures = ["x86_64"]
+  architectures = ["arm64"]
 
   source_path = "${path.module}/src/processor"
 
-  # Build configuration for Go
-  build_in_docker = true
-  docker_image    = "public.ecr.aws/sam/build-go1.x:latest"
+  # Serverless-first build configuration
+  create_package = false
+  local_existing_package = "../src/data-processing/lambda/event-processor/main.zip"
 
   # Runtime configuration
   timeout     = 900  # 15 minutes for data processing
@@ -268,15 +343,15 @@ module "codeowners_scraper_lambda" {
 
   function_name = "${local.name_prefix}-codeowners-scraper"
   description   = "Scrapes GitHub CODEOWNERS files for ownership data"
-  handler       = "main"
+  handler       = "bootstrap"
   runtime       = "provided.al2023"
-  architectures = ["x86_64"]
+  architectures = ["arm64"]
 
   source_path = "${path.module}/src/codeowners_scraper"
 
-  # Build configuration for Go
-  build_in_docker = true
-  docker_image    = "public.ecr.aws/sam/build-go1.x:latest"
+  # Serverless-first build configuration
+  create_package = false
+  local_existing_package = "../src/data-processing/lambda/event-processor/main.zip"
 
   # Runtime configuration
   timeout     = 300
@@ -345,15 +420,15 @@ module "openshift_scraper_lambda" {
 
   function_name = "${local.name_prefix}-openshift-scraper"
   description   = "Scrapes OpenShift/Kubernetes metadata for ownership data"
-  handler       = "main"
+  handler       = "bootstrap"
   runtime       = "provided.al2023"
-  architectures = ["x86_64"]
+  architectures = ["arm64"]
 
   source_path = "${path.module}/src/openshift_scraper"
 
-  # Build configuration for Go
-  build_in_docker = true
-  docker_image    = "public.ecr.aws/sam/build-go1.x:latest"
+  # Serverless-first build configuration
+  create_package = false
+  local_existing_package = "../src/data-processing/lambda/event-processor/main.zip"
 
   # Runtime configuration
   timeout     = 300

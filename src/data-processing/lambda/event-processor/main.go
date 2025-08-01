@@ -2,22 +2,14 @@ package main
 
 import (
     "context"
-    "encoding/json"
     "fmt"
     "log"
     "math"
-    "os"
     "strings"
     "time"
 
     "github.com/aws/aws-lambda-go/lambda"
-    "github.com/aws/aws-sdk-go-v2/aws"
-    "github.com/aws/aws-sdk-go-v2/config"
-    "github.com/aws/aws-sdk-go-v2/service/dynamodb"
-    "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-    "github.com/aws/aws-sdk-go-v2/service/s3"
-    "github.com/aws/aws-sdk-go-v2/service/sns"
-    "github.com/aws/aws-xray-sdk-go/xray"
+    "github.com/aws/aws-xray-sdk-go/v2/xray"
 )
 
 type ProcessorEvent struct {

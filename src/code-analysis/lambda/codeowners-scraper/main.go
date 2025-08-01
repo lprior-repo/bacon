@@ -12,13 +12,13 @@ import (
 	"bacon/src/code-analysis/clients"
 	"bacon/src/code-analysis/parsers"
 	"bacon/src/code-analysis/types"
-	"bacon/src/shared"
+	common "bacon/src/shared"
 )
 
 func HandleRequest(ctx context.Context, event types.Event) (string, error) {
 	pipeline := createProcessingPipeline()
 	
-	result := shared.WithTracedPipeline(ctx, "codeowners-scraper", pipeline, event)
+	result := common.WithTracedPipeline(ctx, "codeowners-scraper", pipeline, event)
 	if result.IsFailure() {
 		return "", result.Error
 	}
@@ -27,8 +27,8 @@ func HandleRequest(ctx context.Context, event types.Event) (string, error) {
 	return string(response), nil
 }
 
-func createProcessingPipeline() *shared.Pipeline[types.Event] {
-	return shared.NewPipeline[types.Event]().
+func createProcessingPipeline() *common.Pipeline[types.Event] {
+	return common.NewPipeline[types.Event]().
 		AddStep(validateEvent).
 		AddStep(initializeContext).
 		AddStep(fetchRepositoriesStep).

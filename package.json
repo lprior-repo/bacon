@@ -1,0 +1,26 @@
+{
+  "name": "bacon",
+  "version": "1.0.0",
+  "description": "AWS serverless infrastructure discovery and analysis platform",
+  "private": true,
+  "scripts": {
+    "build": "nx run-many -t build",
+    "test": "nx run-many -t test",
+    "lint": "nx run-many -t lint",
+    "clean": "nx run-many -t clean",
+    "mod-tidy": "nx run-many -t mod-tidy",
+    "contract-test": "nx run-many -t contract-test",
+    "e2e-test": "nx run-many -t e2e-test",
+    "mage:build": "mage build",
+    "mage:test": "mage test",
+    "mage:ci": "mage ci"
+  },
+  "devDependencies": {
+    "nx": "^21.3.10",
+    "@nx/js": "^21.3.10",
+    "@nrwl/nx-terraform": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

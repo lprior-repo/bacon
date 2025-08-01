@@ -1,0 +1,45 @@
+{
+  "name": "terraform",
+  "root": "terraform",
+  "sourceRoot": "terraform",
+  "projectType": "application",
+  "targets": {
+    "terraform-plan": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform plan -out=terraform.tfplan",
+        "cwd": "terraform"
+      }
+    },
+    "terraform-apply": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform apply terraform.tfplan",
+        "cwd": "terraform"
+      },
+      "dependsOn": ["terraform-plan"]
+    },
+    "terraform-validate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform validate",
+        "cwd": "terraform"
+      }
+    },
+    "terraform-destroy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform destroy -auto-approve",
+        "cwd": "terraform"
+      }
+    },
+    "terraform-init": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform init",
+        "cwd": "terraform"
+      }
+    }
+  },
+  "tags": ["terraform", "infrastructure"]
+}

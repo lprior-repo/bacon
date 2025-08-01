@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  turborepo-cache:
+    image: fox1t/turborepo-remote-cache:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - TURBO_TOKEN=your-secret-token-here
+      - NODE_ENV=production
+      - STORAGE_PROVIDER=s3  # or 'local' for filesystem
+      - S3_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_REGION=${AWS_REGION}
+      - S3_BUCKET=bacon-turborepo-cache
+    volumes:
+      - turborepo-cache:/opt/app/cache
+    restart: unless-stopped
+
+  # Alternative: Simple S3-based cache
+  turborepo-s3-cache:
+    image: ducktors/turborepo-remote-cache:latest
+    ports:
+      - "3002:3000"
+    environment:
+      - TURBO_TOKEN=your-secret-token-here
+      - STORAGE_PROVIDER=s3
+      - S3_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - S3_REGION=${AWS_REGION}
+      - S3_BUCKET=bacon-turborepo-cache
+    restart: unless-stopped
+
+volumes:
+  turborepo-cache:

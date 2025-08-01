@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "type": "object",
+  "properties": {
+    "environment": {
+      "type": "string",
+      "description": "Target environment (dev, staging, prod)",
+      "enum": ["dev", "staging", "prod"],
+      "default": "dev"
+    },
+    "workspace": {
+      "type": "string", 
+      "description": "Terraform workspace prefix",
+      "default": "bacon"
+    },
+    "autoApprove": {
+      "type": "boolean",
+      "description": "Auto-approve terraform apply",
+      "default": false
+    },
+    "varsFile": {
+      "type": "string",
+      "description": "Path to terraform vars file"
+    }
+  },
+  "required": ["environment"]
+}

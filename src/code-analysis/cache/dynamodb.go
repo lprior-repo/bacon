@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	codeownersTypes "bacon/src/code-analysis/types"
-	"bacon/src/shared"
 )
 
 type Manager struct {
@@ -22,7 +21,7 @@ type Manager struct {
 
 func NewManager(cfg aws.Config) *Manager {
 	return &Manager{
-		client:    shared.CreateDynamoClient(cfg),
+		client:    dynamodb.NewFromConfig(cfg),
 		tableName: os.Getenv("DYNAMODB_TABLE"),
 	}
 }

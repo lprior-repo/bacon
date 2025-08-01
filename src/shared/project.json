@@ -1,0 +1,37 @@
+{
+  "name": "shared",
+  "root": "src/shared",
+  "sourceRoot": "src/shared",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go build -v ./...",
+        "cwd": "src/shared"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test -v ./...",
+        "cwd": "src/shared"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "golangci-lint run",
+        "cwd": "src/shared"
+      }
+    },
+    "mod-tidy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go mod tidy",
+        "cwd": "src/shared"
+      }
+    }
+  },
+  "tags": ["go", "library", "shared"]
+}

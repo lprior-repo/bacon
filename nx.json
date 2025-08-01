@@ -1,0 +1,101 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "affected": {
+    "defaultBase": "main"
+  },
+  "targetDefaults": {
+    "build": {
+      "cache": true,
+      "inputs": [
+        "production",
+        "^production",
+        {
+          "externalDependencies": ["go"]
+        }
+      ],
+      "outputs": [
+        "{projectRoot}/main",
+        "{projectRoot}/dist",
+        "{projectRoot}/.aws-sam"
+      ]
+    },
+    "test": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        {
+          "externalDependencies": ["go"]
+        }
+      ],
+      "outputs": [
+        "{projectRoot}/coverage"
+      ]
+    },
+    "lint": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "{workspaceRoot}/.golangci.yml"
+      ]
+    },
+    "mod-tidy": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/go.mod",
+        "{projectRoot}/go.sum"
+      ],
+      "outputs": [
+        "{projectRoot}/go.sum"
+      ]
+    },
+    "terraform-plan": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.tf",
+        "{projectRoot}/**/*.tfvars"
+      ],
+      "outputs": [
+        "{projectRoot}/terraform.tfplan"
+      ]
+    },
+    "terraform-apply": {
+      "cache": false,
+      "dependsOn": ["terraform-plan"]
+    }
+  },
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
+    "production": [
+      "default",
+      "!{projectRoot}/**/?(*.)+(spec|test).[jt]s?(x)?(.snap)",
+      "!{projectRoot}/tsconfig.spec.json",
+      "!{projectRoot}/jest.config.[jt]s",
+      "!{projectRoot}/**/*_test.go",
+      "!{projectRoot}/**/testdata/**/*"
+    ],
+    "sharedGlobals": [
+      "{workspaceRoot}/go.mod",
+      "{workspaceRoot}/go.sum",
+      "{workspaceRoot}/magefile.go"
+    ]
+  },
+  "plugins": [
+    {
+      "plugin": "@nrwl/nx-terraform",
+      "options": {
+        "planTargetName": "terraform-plan",
+        "applyTargetName": "terraform-apply",
+        "destroyTargetName": "terraform-destroy",
+        "validateTargetName": "terraform-validate"
+      }
+    }
+  ],
+  "cli": {
+    "analytics": false
+  },
+  "defaultBase": "main"
+}

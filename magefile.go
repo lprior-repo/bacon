@@ -98,16 +98,86 @@ func Clean() error {
 	return nil
 }
 
-// Test runs tests for all packages in parallel
+// Test runs unit tests for all packages in parallel with coverage
 func Test() error {
-	fmt.Println("🧪 Running tests in parallel...")
+	fmt.Println("🧪 Running unit tests in parallel...")
 	
-	// Run tests with parallel execution and race detection
+	// Run tests with parallel execution, race detection, and coverage
 	env := map[string]string{
 		"CGO_ENABLED": "1", // Required for race detector
 	}
 	
-	return sh.RunWith(env, "go", "test", "-race", "-parallel", fmt.Sprintf("%d", runtime.NumCPU()), "./...")
+	args := []string{
+		"test",
+		"-race",
+		"-parallel", fmt.Sprintf("%d", runtime.NumCPU()),
+		"-coverprofile=coverage.out",
+		"-covermode=atomic",
+		"-v",
+		"./...",
+	}
+	
+	return sh.RunWith(env, "go", args...)
+}
+
+// TestUnit runs unit tests only (excludes integration tests)
+func TestUnit() error {
+	fmt.Println("🧪 Running unit tests only...")
+	
+	env := map[string]string{
+		"CGO_ENABLED": "1",
+	}
+	
+	args := []string{
+		"test",
+		"-race",
+		"-parallel", fmt.Sprintf("%d", runtime.NumCPU()),
+		"-short", // Skip integration tests
+		"-coverprofile=coverage.out",
+		"-covermode=atomic",
+		"-v",
+		"./...",
+	}
+	
+	return sh.RunWith(env, "go", args...)
+}
+
+// TestContract runs contract tests against Terraform configurations
+func TestContract() error {
+	fmt.Println("🔗 Running contract tests...")
+	
+	env := map[string]string{
+		"CGO_ENABLED": "1",
+	}
+	
+	args := []string{
+		"test",
+		"-tags", "contract",
+		"-parallel", fmt.Sprintf("%d", runtime.NumCPU()),
+		"-v",
+		"./tests/contract/...",
+	}
+	
+	return sh.RunWith(env, "go", args...)
+}
+
+// TestE2E runs end-to-end tests against ephemeral infrastructure
+func TestE2E() error {
+	fmt.Println("🌐 Running end-to-end tests...")
+	
+	env := map[string]string{
+		"CGO_ENABLED": "1",
+	}
+	
+	args := []string{
+		"test",
+		"-tags", "e2e",
+		"-timeout", "30m", // E2E tests can take longer
+		"-v",
+		"./tests/e2e/...",
+	}
+	
+	return sh.RunWith(env, "go", args...)
 }
 
 // Lint runs linters on all Go code
@@ -145,7 +215,11 @@ func ModTidy() error {
 			defer wg.Done()
 			
 			dir := filepath.Dir(modPath)
-			if err := sh.RunDir(dir, "go", "mod", "tidy"); err != nil {
+			oldDir, _ := os.Getwd()
+			os.Chdir(dir)
+			defer os.Chdir(oldDir)
+			
+			if err := sh.Run("go", "mod", "tidy"); err != nil {
 				mu.Lock()
 				errors = append(errors, fmt.Errorf("failed to tidy %s: %w", modPath, err))
 				mu.Unlock()

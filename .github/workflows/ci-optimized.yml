@@ -1,0 +1,141 @@
+name: Ultra-Fast CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  GO_VERSION: "1.24.5"
+  NODE_VERSION: "20"
+
+jobs:
+  # Matrix build for maximum parallelization
+  build-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lambda: [
+          "codeowners-scraper",
+          "github-scraper", 
+          "datadog-scraper",
+          "openshift-scraper",
+          "event-processor"
+        ]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          src/**/go.sum
+
+    - name: Install Mage
+      run: go install github.com/magefile/mage@latest
+
+    - name: Build specific Lambda
+      run: |
+        cd src/*/lambda/${{ matrix.lambda }}
+        go build -ldflags "-s -w" -o main .
+
+    - name: Upload Lambda binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: lambda-${{ matrix.lambda }}
+        path: src/**/lambda/${{ matrix.lambda }}/main
+        retention-days: 1
+
+  # Parallel testing matrix
+  test-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test-type: ["unit", "integration", "benchmark"]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+
+    - name: Install Mage
+      run: go install github.com/magefile/mage@latest
+
+    - name: Run tests
+      run: |
+        case "${{ matrix.test-type }}" in
+          "unit")
+            mage testunit
+            ;;
+          "integration")
+            mage testcontract
+            ;;
+          "benchmark")
+            go test -bench=. -benchmem ./...
+            ;;
+        esac
+
+    - name: Upload coverage
+      if: matrix.test-type == 'unit'
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.out
+
+  # Terraform parallel operations
+  terraform-matrix:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        environment: ["dev", "staging"]
+    env:
+      TF_VAR_namespace: ci-${{ matrix.environment }}-${{ github.run_number }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "~1.8"
+
+    - name: Terraform Init & Plan
+      run: |
+        cd terraform/environments/${{ matrix.environment }}
+        terraform init
+        terraform plan -out=tfplan
+
+    - name: Upload Terraform Plan
+      uses: actions/upload-artifact@v4
+      with:
+        name: tfplan-${{ matrix.environment }}
+        path: terraform/environments/${{ matrix.environment }}/tfplan
+
+  # Final assembly and deployment
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build-matrix, test-matrix, terraform-matrix]
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all Lambda binaries
+      uses: actions/download-artifact@v4
+      with:
+        pattern: lambda-*
+        path: artifacts/
+
+    - name: Deploy to AWS
+      run: |
+        # Use SAM CLI for rapid deployment
+        sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
