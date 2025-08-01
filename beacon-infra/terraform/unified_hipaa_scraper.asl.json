@@ -1,0 +1,370 @@
+{
+  "Comment": "Unified Express Step Function to scrape all AWS HIPAA-eligible services using Resource Explorer with concurrent Map processing, JSONata transformations, and DynamoDB caching",
+  "StartAt": "InitializeHIPAAScraperContext",
+  "QueryLanguage": "JSONata",
+  "StateMachineType": "EXPRESS",
+  "States": {
+    "InitializeHIPAAScraperContext": {
+      "Type": "Pass",
+      "Comment": "Initialize unified HIPAA scraper context with all service definitions",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "scraperId": "{% $uuid() %}",
+        "timestamp": "{% $now() %}",
+        "accountId": "{% $states.input.accountId %}",
+        "resourceExplorerViewArn": "{% $states.input.resourceExplorerViewArn %}",
+        "hipaaServices": [
+          {"name": "amplify-console", "resourceType": "amplify:app", "cacheMinutes": 60},
+          {"name": "api-gateway", "resourceType": "apigateway:restapi", "cacheMinutes": 30},
+          {"name": "api-gateway-v2", "resourceType": "apigatewayv2:api", "cacheMinutes": 30},
+          {"name": "appsync", "resourceType": "appsync:graphqlapi", "cacheMinutes": 60},
+          {"name": "athena", "resourceType": "athena:workgroup", "cacheMinutes": 120},
+          {"name": "aurora-mysql", "resourceType": "rds:cluster", "cacheMinutes": 30},
+          {"name": "aurora-postgresql", "resourceType": "rds:cluster", "cacheMinutes": 30},
+          {"name": "backup", "resourceType": "backup:backupvault", "cacheMinutes": 240},
+          {"name": "batch", "resourceType": "batch:jobqueue", "cacheMinutes": 120},
+          {"name": "bedrock", "resourceType": "bedrock:knowledgebase", "cacheMinutes": 240},
+          {"name": "certificate-manager", "resourceType": "acm:certificate", "cacheMinutes": 240},
+          {"name": "cloudfront", "resourceType": "cloudfront:distribution", "cacheMinutes": 120},
+          {"name": "cloudtrail", "resourceType": "cloudtrail:trail", "cacheMinutes": 240},
+          {"name": "cloudwatch", "resourceType": "logs:loggroup", "cacheMinutes": 60},
+          {"name": "codebuild", "resourceType": "codebuild:project", "cacheMinutes": 120},
+          {"name": "codecommit", "resourceType": "codecommit:repository", "cacheMinutes": 240},
+          {"name": "codedeploy", "resourceType": "codedeploy:application", "cacheMinutes": 240},
+          {"name": "codepipeline", "resourceType": "codepipeline:pipeline", "cacheMinutes": 240},
+          {"name": "cognito", "resourceType": "cognito-idp:userpool", "cacheMinutes": 120},
+          {"name": "comprehend", "resourceType": "comprehend:entityrecognizer", "cacheMinutes": 240},
+          {"name": "comprehend-medical", "resourceType": "comprehendmedical:rxnorminferencejob", "cacheMinutes": 240},
+          {"name": "config", "resourceType": "config:configurationrecorder", "cacheMinutes": 240},
+          {"name": "connect", "resourceType": "connect:instance", "cacheMinutes": 120},
+          {"name": "dynamodb", "resourceType": "dynamodb:table", "cacheMinutes": 30},
+          {"name": "ec2-instances", "resourceType": "ec2:instance", "cacheMinutes": 15},
+          {"name": "ec2-volumes", "resourceType": "ec2:volume", "cacheMinutes": 30},
+          {"name": "ecs-clusters", "resourceType": "ecs:cluster", "cacheMinutes": 60},
+          {"name": "ecs-services", "resourceType": "ecs:service", "cacheMinutes": 30},
+          {"name": "efs", "resourceType": "elasticfilesystem:filesystem", "cacheMinutes": 120},
+          {"name": "eks", "resourceType": "eks:cluster", "cacheMinutes": 120},
+          {"name": "kms", "resourceType": "kms:key", "cacheMinutes": 240},
+          {"name": "lambda", "resourceType": "lambda:function", "cacheMinutes": 30},
+          {"name": "neptune", "resourceType": "neptune:dbcluster", "cacheMinutes": 240},
+          {"name": "rds-instances", "resourceType": "rds:db", "cacheMinutes": 60},
+          {"name": "s3", "resourceType": "s3:bucket", "cacheMinutes": 120},
+          {"name": "sns", "resourceType": "sns:topic", "cacheMinutes": 120},
+          {"name": "sqs", "resourceType": "sqs:queue", "cacheMinutes": 60},
+          {"name": "secrets-manager", "resourceType": "secretsmanager:secret", "cacheMinutes": 240},
+          {"name": "vpc", "resourceType": "ec2:vpc", "cacheMinutes": 240},
+          {"name": "healthlake", "resourceType": "healthlake:datastore", "cacheMinutes": 480}
+        ]
+      },
+      "Output": "{% {'scraperId': $scraperId, 'timestamp': $timestamp, 'accountId': $accountId, 'resourceExplorerViewArn': $resourceExplorerViewArn, 'hipaaServices': $hipaaServices} %}",
+      "Next": "CheckGlobalCacheStatus"
+    },
+    "CheckGlobalCacheStatus": {
+      "Type": "Task",
+      "Comment": "Check DynamoDB for global scrape status to determine which services need fresh data",
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:getItem",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+        "Key": {
+          "pk": {"S": "{% 'HIPAA_SCRAPE_STATUS#' & $states.input.accountId %}"},
+          "sk": {"S": "GLOBAL#LATEST"}
+        },
+        "ConsistentRead": true
+      },
+      "Output": "{% $merge([$states.input, {'globalCacheResult': $states.result}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'globalCacheError': $states.errorOutput, 'proceedWithFullScrape': true}]) %}",
+          "Next": "ProcessAllHIPAAServices"
+        }
+      ],
+      "Next": "DetermineServicesToScrape"
+    },
+    "DetermineServicesToScrape": {
+      "Type": "Pass",
+      "Comment": "Determine which services need fresh scraping based on cache age",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "currentTime": "{% $millis() %}",
+        "lastScrapeData": "{% $exists($states.input.globalCacheResult.Item) ? $parse($states.input.globalCacheResult.Item.serviceStatus.S) : {} %}",
+        "servicesToScrape": "{% $filter($states.input.hipaaServices, function($service) { $not($exists($lastScrapeData[$service.name])) or ($currentTime - $number($lastScrapeData[$service.name].lastScraped)) > ($service.cacheMinutes * 60000) }) %}"
+      },
+      "Output": "{% $merge([$states.input, {'servicesToScrape': $servicesToScrape, 'totalServicesToScrape': $count($servicesToScrape), 'lastScrapeData': $lastScrapeData}]) %}",
+      "Next": "EvaluateScrapingNeeds"
+    },
+    "EvaluateScrapingNeeds": {
+      "Type": "Choice",
+      "Comment": "Decide whether to proceed with scraping or return cached data",
+      "QueryLanguage": "JSONata",
+      "Choices": [
+        {
+          "Condition": "{% $states.input.totalServicesToScrape = 0 %}",
+          "Output": "{% {'source': 'all_cached', 'message': 'All services have fresh cache data', 'scraperId': $states.input.scraperId} %}",
+          "Next": "ReturnAllCachedResults"
+        }
+      ],
+      "Default": "ProcessAllHIPAAServices"
+    },
+    "ReturnAllCachedResults": {
+      "Type": "Pass",
+      "Comment": "Return message indicating all data is cached and fresh",
+      "QueryLanguage": "JSONata",
+      "Output": "{% {'source': 'cache', 'scraperId': $states.input.scraperId, 'timestamp': $now(), 'message': 'All HIPAA services have fresh cached data', 'lastScrapeData': $states.input.lastScrapeData} %}",
+      "End": true
+    },
+    "ProcessAllHIPAAServices": {
+      "Type": "Map",
+      "Comment": "Process all HIPAA services concurrently using Resource Explorer",
+      "QueryLanguage": "JSONata",
+      "Items": "{% $states.input.servicesToScrape %}",
+      "MaxConcurrency": 20,
+      "ItemSelector": {
+        "serviceName": "{% $states.context.Map.Item.Value.name %}",
+        "resourceType": "{% $states.context.Map.Item.Value.resourceType %}",
+        "cacheMinutes": "{% $states.context.Map.Item.Value.cacheMinutes %}",
+        "accountId": "{% $states.input.accountId %}",
+        "resourceExplorerViewArn": "{% $states.input.resourceExplorerViewArn %}",
+        "scraperId": "{% $states.input.scraperId %}"
+      },
+      "ItemProcessor": {
+        "StartAt": "DiscoverServiceResources",
+        "States": {
+          "DiscoverServiceResources": {
+            "Type": "Task",
+            "Comment": "Use Resource Explorer to discover resources for this service type",
+            "Resource": "arn:aws:states:::aws-sdk:resourceExplorer2:search",
+            "QueryLanguage": "JSONata",
+            "Arguments": {
+              "QueryString": "{% 'resourcetype:' & $states.input.resourceType %}",
+              "ViewArn": "{% $states.input.resourceExplorerViewArn %}",
+              "MaxResults": 1000
+            },
+            "Output": "{% {'serviceName': $states.input.serviceName, 'resourceType': $states.input.resourceType, 'discoveredResources': $states.result.Resources, 'nextToken': $states.result.NextToken, 'accountId': $states.input.accountId, 'scraperId': $states.input.scraperId} %}",
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "Output": "{% {'serviceName': $states.input.serviceName, 'resourceType': $states.input.resourceType, 'discoveredResources': [], 'error': $states.errorOutput, 'explorerFailed': true, 'accountId': $states.input.accountId, 'scraperId': $states.input.scraperId} %}",
+                "Next": "HandleServiceError"
+              }
+            ],
+            "Next": "CheckForMoreServiceResources"
+          },
+          "CheckForMoreServiceResources": {
+            "Type": "Choice",
+            "Comment": "Check if there are more resources to retrieve with pagination",
+            "QueryLanguage": "JSONata",
+            "Choices": [
+              {
+                "Condition": "{% $exists($states.input.nextToken) %}",
+                "Next": "FetchMoreServiceResources"
+              }
+            ],
+            "Default": "ProcessServiceResources"
+          },
+          "FetchMoreServiceResources": {
+            "Type": "Task",
+            "Comment": "Continue fetching resources using pagination token",
+            "Resource": "arn:aws:states:::aws-sdk:resourceExplorer2:search",
+            "QueryLanguage": "JSONata",
+            "Arguments": {
+              "QueryString": "{% 'resourcetype:' & $states.input.resourceType %}",
+              "ViewArn": "{% $states.input.resourceExplorerViewArn %}",
+              "MaxResults": 1000,
+              "NextToken": "{% $states.input.nextToken %}"
+            },
+            "Output": "{% $merge([$states.input, {'discoveredResources': $append($states.input.discoveredResources, $states.result.Resources), 'nextToken': $states.result.NextToken}]) %}",
+            "Next": "CheckForMoreServiceResources"
+          },
+          "ProcessServiceResources": {
+            "Type": "Pass",
+            "Comment": "Process and enrich the discovered resources with tags and associations",
+            "QueryLanguage": "JSONata",
+            "Assign": {
+              "totalResources": "{% $count($states.input.discoveredResources) %}",
+              "regionBreakdown": "{% $reduce($states.input.discoveredResources, function($acc, $resource) { $merge([$acc, {$resource.Region: ($acc[$resource.Region] ? $acc[$resource.Region] + 1 : 1)}]) }, {}) %}",
+              "enrichedResources": "{% $map($states.input.discoveredResources, function($resource) { {'resourceArn': $resource.Arn, 'region': $resource.Region, 'resourceId': $split($resource.Arn, '/')[-1], 'properties': $resource.Properties, 'tags': $reduce($keys($resource.Properties)[$ ~> /^tag:/], function($acc, $tagKey) { $merge([$acc, {$substring($tagKey, 4): $resource.Properties[$tagKey]}]) }, {}), 'lastScraped': $now()} }) %}",
+              "taggedResources": "{% $count($states.input.discoveredResources[$count($keys(Properties)[$ ~> /^tag:/]) > 0]) %}",
+              "associations": "{% $map($states.input.discoveredResources, function($resource) { {'resourceId': $split($resource.Arn, '/')[-1], 'resourceArn': $resource.Arn, 'accountOwnership': {'accountId': $states.input.accountId, 'relationship': 'owns'}, 'regionalPlacement': {'region': $resource.Region, 'relationship': 'deployed_in'}, 'tagging': $map($keys($resource.Properties)[$ ~> /^tag:/], function($tagKey) { {'key': $substring($tagKey, 4), 'value': $resource.Properties[$tagKey], 'relationship': 'tagged_with'} })} }) %}"
+            },
+            "Output": "{% {'serviceName': $states.input.serviceName, 'resourceType': $states.input.resourceType, 'accountId': $states.input.accountId, 'scraperId': $states.input.scraperId, 'summary': {'totalResources': $totalResources, 'regionBreakdown': $regionBreakdown, 'taggedResources': $taggedResources}, 'data': {'resources': $enrichedResources, 'associations': $associations}, 'lastScraped': $now(), 'scrapeSuccess': true} %}",
+            "End": true
+          },
+          "HandleServiceError": {
+            "Type": "Pass",
+            "Comment": "Handle errors when discovering service resources",
+            "QueryLanguage": "JSONata",
+            "Output": "{% {'serviceName': $states.input.serviceName, 'resourceType': $states.input.resourceType, 'accountId': $states.input.accountId, 'scraperId': $states.input.scraperId, 'summary': {'totalResources': 0, 'regionBreakdown': {}, 'taggedResources': 0}, 'data': {'resources': [], 'associations': []}, 'error': $states.input.error, 'lastScraped': $now(), 'scrapeSuccess': false} %}",
+            "End": true
+          }
+        }
+      },
+      "Output": "{% $merge([$states.input, {'serviceResults': $states.result}]) %}",
+      "Next": "AggregateAllResults"
+    },
+    "AggregateAllResults": {
+      "Type": "Pass",
+      "Comment": "Aggregate results from all HIPAA services and prepare comprehensive summary",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "totalResourcesAcrossServices": "{% $sum($states.input.serviceResults.summary.totalResources) %}",
+        "successfulServices": "{% $count($states.input.serviceResults[scrapeSuccess = true]) %}",
+        "failedServices": "{% $count($states.input.serviceResults[scrapeSuccess = false]) %}",
+        "serviceBreakdown": "{% $reduce($states.input.serviceResults, function($acc, $service) { $merge([$acc, {$service.serviceName: {'totalResources': $service.summary.totalResources, 'taggedResources': $service.summary.taggedResources, 'regions': $keys($service.summary.regionBreakdown), 'scrapeSuccess': $service.scrapeSuccess}}]) }, {}) %}",
+        "regionBreakdown": "{% $reduce($states.input.serviceResults, function($acc, $service) { $reduce($keys($service.summary.regionBreakdown), function($regionAcc, $region) { $merge([$regionAcc, {$region: ($regionAcc[$region] ? $regionAcc[$region] + $service.summary.regionBreakdown[$region] : $service.summary.regionBreakdown[$region])}]) }, $acc) }, {}) %}",
+        "allAssociations": "{% $reduce($states.input.serviceResults, function($acc, $service) { $append($acc, $service.data.associations) }, []) %}",
+        "serviceStatusUpdate": "{% $reduce($states.input.serviceResults, function($acc, $service) { $merge([$acc, {$service.serviceName: {'lastScraped': $millis() ~> $string, 'resourceCount': $service.summary.totalResources, 'scrapeSuccess': $service.scrapeSuccess}}]) }, $states.input.lastScrapeData ? $states.input.lastScrapeData : {}) %}"
+      },
+      "Output": "{% {'scraperId': $states.input.scraperId, 'accountId': $states.input.accountId, 'timestamp': $states.input.timestamp, 'completedAt': $now(), 'summary': {'totalResourcesAcrossServices': $totalResourcesAcrossServices, 'successfulServices': $successfulServices, 'failedServices': $failedServices, 'servicesScraped': $count($states.input.serviceResults), 'serviceBreakdown': $serviceBreakdown, 'regionBreakdown': $regionBreakdown}, 'data': {'serviceResults': $states.input.serviceResults, 'allAssociations': $allAssociations}, 'serviceStatusUpdate': $serviceStatusUpdate} %}",
+      "Next": "StoreAggregatedResultsInDynamoDB"
+    },
+    "StoreAggregatedResultsInDynamoDB": {
+      "Type": "Parallel",
+      "Comment": "Store both individual service results and aggregated data in DynamoDB concurrently",
+      "QueryLanguage": "JSONata",
+      "Branches": [
+        {
+          "StartAt": "StoreGlobalStatus",
+          "States": {
+            "StoreGlobalStatus": {
+              "Type": "Task",
+              "Comment": "Store global HIPAA scrape status and service breakdown",
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem",
+              "QueryLanguage": "JSONata",
+              "Arguments": {
+                "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+                "Item": {
+                  "pk": {"S": "{% 'HIPAA_SCRAPE_STATUS#' & $states.input.accountId %}"},
+                  "sk": {"S": "GLOBAL#LATEST"},
+                  "scraperId": {"S": "{% $states.input.scraperId %}"},
+                  "accountId": {"S": "{% $states.input.accountId %}"},
+                  "lastScraped": {"S": "{% $millis() ~> $string %}"},
+                  "serviceStatus": {"S": "{% $string($states.input.serviceStatusUpdate) %}"},
+                  "summary": {"S": "{% $string($states.input.summary) %}"},
+                  "ttl": {"N": "{% ($millis() + 604800000) ~> $string %}"}
+                }
+              },
+              "Output": "{% {'globalStatusStored': true} %}",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Output": "{% {'globalStatusStored': false, 'error': $states.errorOutput} %}",
+                  "Next": "HandleGlobalStatusError"
+                }
+              ],
+              "End": true
+            },
+            "HandleGlobalStatusError": {
+              "Type": "Pass",
+              "QueryLanguage": "JSONata",
+              "Output": "{% {'globalStatusStored': false, 'error': $states.input.error} %}",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "StoreDetailedResults",
+          "States": {
+            "StoreDetailedResults": {
+              "Type": "Task",
+              "Comment": "Store detailed service results for individual service caching",
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem",
+              "QueryLanguage": "JSONata",
+              "Arguments": {
+                "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+                "Item": {
+                  "pk": {"S": "{% 'HIPAA_DETAILED_RESULTS#' & $states.input.accountId %}"},
+                  "sk": {"S": "{% $states.input.scraperId %}"},
+                  "scraperId": {"S": "{% $states.input.scraperId %}"},
+                  "accountId": {"S": "{% $states.input.accountId %}"},
+                  "lastScraped": {"S": "{% $millis() ~> $string %}"},
+                  "detailedResults": {"S": "{% $string($states.input.data) %}"},
+                  "summary": {"S": "{% $string($states.input.summary) %}"},
+                  "ttl": {"N": "{% ($millis() + 604800000) ~> $string %}"}
+                }
+              },
+              "Output": "{% {'detailedResultsStored': true} %}",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Output": "{% {'detailedResultsStored': false, 'error': $states.errorOutput} %}",
+                  "Next": "HandleDetailedResultsError"
+                }
+              ],
+              "End": true
+            },
+            "HandleDetailedResultsError": {
+              "Type": "Pass",
+              "QueryLanguage": "JSONata",
+              "Output": "{% {'detailedResultsStored': false, 'error': $states.input.error} %>",
+              "End": true
+            }
+          }
+        }
+      ],
+      "Output": "{% $merge([$states.input, {'storageResults': $states.result}]) %}",
+      "Next": "PrepareNeptuneUpdate"
+    },
+    "PrepareNeptuneUpdate": {
+      "Type": "Pass",
+      "Comment": "Transform all HIPAA service data for Neptune graph database with comprehensive relationships",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "neptuneVertices": "{% $append($reduce($states.input.data.serviceResults, function($acc, $service) { $append($acc, $map($service.data.resources, function($resource) { {'id': $resource.resourceId, 'label': $uppercase($replace($service.serviceName, '-', '_')), 'properties': $merge([$resource.properties, {'resourceArn': $resource.resourceArn, 'region': $resource.region, 'serviceName': $service.serviceName, 'lastScraped': $resource.lastScraped}])} })) }, []), [{'id': $states.input.accountId, 'label': 'AWSAccount', 'properties': {'accountId': $states.input.accountId, 'lastScanned': $now()}}]) %}",
+        "neptuneEdges": "{% $reduce($states.input.data.serviceResults, function($acc, $service) { $append($acc, $reduce($service.data.resources, function($resourceAcc, $resource) { $append($resourceAcc, [{'from': $states.input.accountId, 'to': $resource.resourceId, 'label': 'OWNS', 'properties': {'serviceType': $service.serviceName, 'discoveredAt': $resource.lastScraped}}, {'from': $resource.resourceId, 'to': $resource.region, 'label': 'DEPLOYED_IN', 'properties': {'serviceType': $service.serviceName, 'discoveredAt': $resource.lastScraped}}]) }, [])) }, []) %}",
+        "tagEdges": "{% $reduce($states.input.data.serviceResults, function($acc, $service) { $append($acc, $reduce($service.data.resources, function($resourceAcc, $resource) { $append($resourceAcc, $map($keys($resource.tags), function($tagKey) { {'from': $resource.resourceId, 'to': $tagKey & ':' & $resource.tags[$tagKey], 'label': 'TAGGED_WITH', 'properties': {'tagKey': $tagKey, 'tagValue': $resource.tags[$tagKey], 'serviceType': $service.serviceName, 'discoveredAt': $resource.lastScraped}} })) }, [])) }, []) %}"
+      },
+      "Output": "{% $merge([$states.input, {'neptuneUpdate': {'vertices': $neptuneVertices, 'edges': $append($neptuneEdges, $tagEdges), 'updateType': 'hipaa_unified_scrape', 'timestamp': $now(), 'associations': $states.input.data.allAssociations, 'summary': $states.input.summary}}]) %}",
+      "Next": "UpdateNeptuneGraph"
+    },
+    "UpdateNeptuneGraph": {
+      "Type": "Task",
+      "Comment": "Send all transformed HIPAA service data to Neptune for graph updates via SQS queue",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "QueueUrl": "{% $states.input.neptuneUpdateQueueUrl %}",
+        "MessageBody": "{% $string($states.input.neptuneUpdate) %}",
+        "MessageAttributes": {
+          "ServiceType": {
+            "StringValue": "unified-hipaa-scraper",
+            "DataType": "String"
+          },
+          "ScraperId": {
+            "StringValue": "{% $states.input.scraperId %}",
+            "DataType": "String"
+          },
+          "AccountId": {
+            "StringValue": "{% $states.input.accountId %}",
+            "DataType": "String"
+          },
+          "UpdateType": {
+            "StringValue": "unified_resource_discovery",
+            "DataType": "String"
+          },
+          "ResourceCount": {
+            "StringValue": "{% $string($states.input.summary.totalResourcesAcrossServices) %}",
+            "DataType": "Number"
+          }
+        }
+      },
+      "Output": "{% $merge([$states.input, {'neptuneQueued': true, 'messageId': $states.result.MessageId}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'neptuneError': $states.errorOutput, 'neptuneQueued': false}]) %}",
+          "Next": "FinalizeUnifiedHIPAAResults"
+        }
+      ],
+      "Next": "FinalizeUnifiedHIPAAResults"
+    },
+    "FinalizeUnifiedHIPAAResults": {
+      "Type": "Pass",
+      "Comment": "Finalize and format the complete unified HIPAA scraper results with comprehensive metrics",
+      "QueryLanguage": "JSONata",
+      "Output": "{% {'scraperId': $states.input.scraperId, 'accountId': $states.input.accountId, 'completedAt': $now(), 'source': 'unified_fresh_scrape', 'summary': $states.input.summary, 'storageResults': {'globalStatusStored': $states.input.storageResults[0].globalStatusStored, 'detailedResultsStored': $states.input.storageResults[1].detailedResultsStored}, 'neptuneQueued': $states.input.neptuneQueued, 'explorerUsed': true, 'metrics': {'totalResourcesDiscovered': $states.input.summary.totalResourcesAcrossServices, 'servicesProcessed': $states.input.summary.servicesScraped, 'successfulServices': $states.input.summary.successfulServices, 'failedServices': $states.input.summary.failedServices, 'regionsCovered': $count($keys($states.input.summary.regionBreakdown)), 'associationsCreated': $count($states.input.data.allAssociations), 'executionTime': ($millis() - $number($states.input.timestamp)) & 'ms', 'resourceExplorerQueries': $states.input.summary.servicesScraped}, 'serviceBreakdown': $states.input.summary.serviceBreakdown} %}",
+      "End": true
+    }
+  }
+}

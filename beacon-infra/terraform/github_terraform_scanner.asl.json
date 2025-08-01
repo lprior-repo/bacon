@@ -1,0 +1,336 @@
+{
+  "Comment": "GitHub Terraform file scanner with intelligent parsing, caching, and Neptune integration",
+  "StartAt": "InitializeGitHubTerraformScanner",
+  "QueryLanguage": "JSONata",
+  "StateMachineType": "EXPRESS",
+  "States": {
+    "InitializeGitHubTerraformScanner": {
+      "Type": "Pass",
+      "Comment": "Initialize GitHub Terraform scanner with organization and repository context",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "scraperId": "{% $uuid() %}",
+        "timestamp": "{% $now() %}",
+        "scanType": "terraform-files",
+        "organization": "{% $states.input.organization %}",
+        "repositories": "{% $states.input.repositories ? $states.input.repositories : [] %}",
+        "scanMode": "{% $states.input.scanMode ? $states.input.scanMode : 'bulk' %}",
+        "maxConcurrency": "{% $states.input.maxConcurrency ? $states.input.maxConcurrency : 10 %}"
+      },
+      "Output": "{% {'scraperId': $scraperId, 'timestamp': $timestamp, 'scanType': $scanType, 'organization': $organization, 'repositories': $repositories, 'scanMode': $scanMode, 'maxConcurrency': $maxConcurrency} %}",
+      "Next": "DetermineRepositoryList"
+    },
+    "DetermineRepositoryList": {
+      "Type": "Choice",
+      "Comment": "Determine whether to scan specific repositories or discover from organization",
+      "QueryLanguage": "JSONata",
+      "Choices": [
+        {
+          "Condition": "{% $count($states.input.repositories) > 0 %}",
+          "Next": "ProcessSpecificRepositories"
+        }
+      ],
+      "Default": "DiscoverOrganizationRepositories"
+    },
+    "DiscoverOrganizationRepositories": {
+      "Type": "Task",
+      "Comment": "Discover all repositories in the organization using GitHub API",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "FunctionName": "github-repo-discovery",
+        "Payload": {
+          "organization": "{% $states.input.organization %}",
+          "type": "all",
+          "sort": "updated",
+          "direction": "desc",
+          "per_page": 100
+        }
+      },
+      "Output": "{% $merge([$states.input, {'discoveredRepositories': $states.result.Payload.repositories, 'totalRepositories': $count($states.result.Payload.repositories)}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'discoveryError': $states.errorOutput, 'discoveredRepositories': [], 'totalRepositories': 0}]) %}",
+          "Next": "HandleDiscoveryError"
+        }
+      ],
+      "Next": "FilterRepositoriesWithTerraform"
+    },
+    "ProcessSpecificRepositories": {
+      "Type": "Pass",
+      "Comment": "Use the provided repository list for scanning",
+      "QueryLanguage": "JSONata",
+      "Output": "{% $merge([$states.input, {'discoveredRepositories': $states.input.repositories, 'totalRepositories': $count($states.input.repositories)}]) %}",
+      "Next": "FilterRepositoriesWithTerraform"
+    },
+    "FilterRepositoriesWithTerraform": {
+      "Type": "Map",
+      "Comment": "Check each repository for Terraform files before full processing",
+      "QueryLanguage": "JSONata",
+      "Items": "{% $states.input.discoveredRepositories %}",
+      "MaxConcurrency": "{% $states.input.maxConcurrency %}",
+      "ItemSelector": {
+        "repository": "{% $states.context.Map.Item.Value %}",
+        "organization": "{% $states.input.organization %}",
+        "scraperId": "{% $states.input.scraperId %}"
+      },
+      "ItemProcessor": {
+        "StartAt": "CheckRepositoryForTerraform",
+        "States": {
+          "CheckRepositoryForTerraform": {
+            "Type": "Task",
+            "Comment": "Quick check if repository contains Terraform files",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "QueryLanguage": "JSONata",
+            "Arguments": {
+              "FunctionName": "github-terraform-detector",
+              "Payload": {
+                "owner": "{% $states.input.organization %}",
+                "repo": "{% $states.input.repository.name %}",
+                "patterns": ["*.tf", "*.tfvars", "terraform/", ".terraform/"]
+              }
+            },
+            "Output": "{% {'repository': $states.input.repository, 'hasTerraform': $states.result.Payload.hasTerraform, 'terraformFiles': $states.result.Payload.terraformFiles, 'terraformDirectories': $states.result.Payload.terraformDirectories} %}",
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "Output": "{% {'repository': $states.input.repository, 'hasTerraform': false, 'error': $states.errorOutput} %}",
+                "Next": "ReturnNoTerraform"
+              }
+            ],
+            "End": true
+          },
+          "ReturnNoTerraform": {
+            "Type": "Pass",
+            "QueryLanguage": "JSONata",
+            "Output": "{% $states.input %}",
+            "End": true
+          }
+        }
+      },
+      "Output": "{% $merge([$states.input, {'terraformRepositories': $filter($states.result, function($repo) { $repo.hasTerraform }), 'totalTerraformRepos': $count($filter($states.result, function($repo) { $repo.hasTerraform }))}]) %}",
+      "Next": "ProcessTerraformRepositories"
+    },
+    "ProcessTerraformRepositories": {
+      "Type": "Map",
+      "Comment": "Process each repository with Terraform files for detailed analysis",
+      "QueryLanguage": "JSONata",
+      "Items": "{% $states.input.terraformRepositories %}",
+      "MaxConcurrency": "{% $states.input.maxConcurrency %}",
+      "ItemSelector": {
+        "repository": "{% $states.context.Map.Item.Value.repository %}",
+        "terraformFiles": "{% $states.context.Map.Item.Value.terraformFiles %}",
+        "terraformDirectories": "{% $states.context.Map.Item.Value.terraformDirectories %}",
+        "organization": "{% $states.input.organization %}",
+        "scraperId": "{% $states.input.scraperId %}"
+      },
+      "ItemProcessor": {
+        "StartAt": "FetchTerraformFileContents",
+        "States": {
+          "FetchTerraformFileContents": {
+            "Type": "Task",
+            "Comment": "Fetch all Terraform file contents from the repository",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "QueryLanguage": "JSONata",
+            "Arguments": {
+              "FunctionName": "github-file-fetcher",
+              "Payload": {
+                "owner": "{% $states.input.organization %}",
+                "repo": "{% $states.input.repository.name %}",
+                "files": "{% $states.input.terraformFiles %}",
+                "ref": "{% $states.input.repository.default_branch %}"
+              }
+            },
+            "Output": "{% $merge([$states.input, {'fileContents': $states.result.Payload.files}]) %}",
+            "Next": "ParseTerraformFiles"
+          },
+          "ParseTerraformFiles": {
+            "Type": "Task",
+            "Comment": "Parse Terraform files to extract resources, variables, and dependencies",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "QueryLanguage": "JSONata",
+            "Arguments": {
+              "FunctionName": "terraform-parser",
+              "Payload": {
+                "repository": "{% $states.input.repository.name %}",
+                "organization": "{% $states.input.organization %}",
+                "files": "{% $states.input.fileContents %}",
+                "parseOptions": {
+                  "extractResources": true,
+                  "extractVariables": true,
+                  "extractOutputs": true,
+                  "extractModules": true,
+                  "extractProviders": true,
+                  "extractDataSources": true
+                }
+              }
+            },
+            "Output": "{% {'repository': $states.input.repository, 'terraformAnalysis': $states.result.Payload, 'scraperId': $states.input.scraperId, 'scannedAt': $now(), 'processingSuccess': true} %}",
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "Output": "{% {'repository': $states.input.repository, 'terraformAnalysis': null, 'error': $states.errorOutput, 'scraperId': $states.input.scraperId, 'scannedAt': $now(), 'processingSuccess': false} %}",
+                "Next": "HandleParsingError"
+              }
+            ],
+            "End": true
+          },
+          "HandleParsingError": {
+            "Type": "Pass",
+            "QueryLanguage": "JSONata",
+            "Output": "{% $states.input %}",
+            "End": true
+          }
+        }
+      },
+      "Output": "{% $merge([$states.input, {'repositoryAnalyses': $states.result}]) %}",
+      "Next": "AggregateGitHubTerraformResults"
+    },
+    "HandleDiscoveryError": {
+      "Type": "Pass",
+      "Comment": "Handle errors in repository discovery",
+      "QueryLanguage": "JSONata",
+      "Output": "{% $merge([$states.input, {'repositoryAnalyses': [], 'totalProcessed': 0}]) %}",
+      "Next": "AggregateGitHubTerraformResults"
+    },
+    "AggregateGitHubTerraformResults": {
+      "Type": "Pass",
+      "Comment": "Aggregate and analyze all Terraform data from GitHub repositories",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "totalProcessed": "{% $count($states.input.repositoryAnalyses) %}",
+        "successfulProcessing": "{% $count($states.input.repositoryAnalyses[processingSuccess = true]) %}",
+        "failedProcessing": "{% $count($states.input.repositoryAnalyses[processingSuccess = false]) %}",
+        "terraformResources": "{% $reduce($states.input.repositoryAnalyses[processingSuccess = true], function($acc, $repo) { $append($acc, $repo.terraformAnalysis.resources) }, []) %}",
+        "terraformModules": "{% $reduce($states.input.repositoryAnalyses[processingSuccess = true], function($acc, $repo) { $append($acc, $repo.terraformAnalysis.modules) }, []) %}",
+        "awsResources": "{% $filter($terraformResources, function($resource) { $resource.provider = 'aws' or $resource.type ~> /^aws_/ }) %}",
+        "resourceTypeBreakdown": "{% $reduce($awsResources, function($acc, $resource) { $merge([$acc, {$resource.type: ($acc[$resource.type] ? $acc[$resource.type] + 1 : 1)}]) }, {}) %}",
+        "repositoryBreakdown": "{% $map($states.input.repositoryAnalyses[processingSuccess = true], function($repo) { {'repository': $repo.repository.name, 'totalResources': $count($repo.terraformAnalysis.resources), 'awsResources': $count($filter($repo.terraformAnalysis.resources, function($r) { $r.provider = 'aws' })), 'modules': $count($repo.terraformAnalysis.modules), 'variables': $count($repo.terraformAnalysis.variables)} }) %}"
+      },
+      "Output": "{% {'scraperId': $states.input.scraperId, 'organization': $states.input.organization, 'scanType': $states.input.scanType, 'timestamp': $states.input.timestamp, 'completedAt': $now(), 'summary': {'totalRepositories': $states.input.totalRepositories, 'terraformRepositories': $states.input.totalTerraformRepos, 'processedRepositories': $totalProcessed, 'successfulProcessing': $successfulProcessing, 'failedProcessing': $failedProcessing, 'totalTerraformResources': $count($terraformResources), 'totalAwsResources': $count($awsResources), 'resourceTypeBreakdown': $resourceTypeBreakdown}, 'data': {'repositoryAnalyses': $states.input.repositoryAnalyses, 'aggregatedResources': $terraformResources, 'awsResources': $awsResources, 'repositoryBreakdown': $repositoryBreakdown}} %>",
+      "Next": "StoreTerraformAnalysisInDynamoDB"
+    },
+    "StoreTerraformAnalysisInDynamoDB": {
+      "Type": "Parallel",
+      "Comment": "Store Terraform analysis results in DynamoDB for caching and quick access",
+      "QueryLanguage": "JSONata",
+      "Branches": [
+        {
+          "StartAt": "StoreSummaryData",
+          "States": {
+            "StoreSummaryData": {
+              "Type": "Task",
+              "Comment": "Store summary data for the GitHub organization scan",
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem",
+              "QueryLanguage": "JSONata",
+              "Arguments": {
+                "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+                "Item": {
+                  "pk": {"S": "{% 'GITHUB_TERRAFORM#' & $states.input.organization %}"},
+                  "sk": {"S": "SUMMARY#LATEST"},
+                  "scraperId": {"S": "{% $states.input.scraperId %}"},
+                  "organization": {"S": "{% $states.input.organization %}"},
+                  "scanType": {"S": "{% $states.input.scanType %}"},
+                  "lastScanned": {"S": "{% $millis() ~> $string %}"},
+                  "summary": {"S": "{% $string($states.input.summary) %}"},
+                  "repositoryBreakdown": {"S": "{% $string($states.input.data.repositoryBreakdown) %}"},
+                  "ttl": {"N": "{% ($millis() + 604800000) ~> $string %}"}
+                }
+              },
+              "Output": "{% {'summaryStored': true} %}",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "StoreDetailedAnalysis",
+          "States": {
+            "StoreDetailedAnalysis": {
+              "Type": "Task",
+              "Comment": "Store detailed Terraform analysis for each repository",
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem",
+              "QueryLanguage": "JSONata",
+              "Arguments": {
+                "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+                "Item": {
+                  "pk": {"S": "{% 'GITHUB_TERRAFORM#' & $states.input.organization %}"},
+                  "sk": {"S": "{% 'DETAILED#' & $states.input.scraperId %}"},
+                  "scraperId": {"S": "{% $states.input.scraperId %}"},
+                  "organization": {"S": "{% $states.input.organization %}"},
+                  "lastScanned": {"S": "{% $millis() ~> $string %}"},
+                  "detailedAnalysis": {"S": "{% $string($states.input.data) %}"},
+                  "totalAwsResources": {"N": "{% $string($states.input.summary.totalAwsResources) %}"},
+                  "ttl": {"N": "{% ($millis() + 604800000) ~> $string %}"}
+                }
+              },
+              "Output": "{% {'detailedStored': true} %}",
+              "End": true
+            }
+          }
+        }
+      ],
+      "Output": "{% $merge([$states.input, {'storageResults': $states.result}]) %}",
+      "Next": "PrepareGitHubNeptuneUpdate"
+    },
+    "PrepareGitHubNeptuneUpdate": {
+      "Type": "Pass",
+      "Comment": "Transform GitHub Terraform data for Neptune graph database with infrastructure relationships",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "neptuneVertices": "{% $append($append($map($states.input.data.repositoryAnalyses[processingSuccess = true], function($repo) { {'id': $repo.repository.name, 'label': 'GitHubRepository', 'properties': {'name': $repo.repository.name, 'organization': $states.input.organization, 'terraformResourceCount': $count($repo.terraformAnalysis.resources), 'lastScanned': $repo.scannedAt}} }), $map($states.input.data.awsResources, function($resource) { {'id': $resource.name & '#' & $resource.type, 'label': 'TerraformResource', 'properties': {'name': $resource.name, 'type': $resource.type, 'provider': $resource.provider, 'repository': $resource.repository, 'filePath': $resource.filePath}} })), [{'id': $states.input.organization, 'label': 'GitHubOrganization', 'properties': {'name': $states.input.organization, 'lastScanned': $now()}}]) %}",
+        "neptuneEdges": "{% $append($map($states.input.data.repositoryAnalyses[processingSuccess = true], function($repo) { {'from': $states.input.organization, 'to': $repo.repository.name, 'label': 'OWNS_REPOSITORY', 'properties': {'relationship': 'organizational_ownership', 'discoveredAt': $repo.scannedAt}} }), $reduce($states.input.data.awsResources, function($acc, $resource) { $append($acc, [{'from': $resource.repository, 'to': $resource.name & '#' & $resource.type, 'label': 'DEFINES_RESOURCE', 'properties': {'relationship': 'terraform_definition', 'filePath': $resource.filePath, 'discoveredAt': $now()}}]) }, [])) %}"
+      },
+      "Output": "{% $merge([$states.input, {'neptuneUpdate': {'vertices': $neptuneVertices, 'edges': $neptuneEdges, 'updateType': 'github_terraform_scan', 'timestamp': $now(), 'summary': $states.input.summary}}]) %}",
+      "Next": "UpdateNeptuneWithGitHubData"
+    },
+    "UpdateNeptuneWithGitHubData": {
+      "Type": "Task",
+      "Comment": "Send GitHub Terraform analysis to Neptune for infrastructure relationship mapping",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "QueueUrl": "{% $states.input.neptuneUpdateQueueUrl %}",
+        "MessageBody": "{% $string($states.input.neptuneUpdate) %}",
+        "MessageAttributes": {
+          "ServiceType": {
+            "StringValue": "github-terraform-scanner",
+            "DataType": "String"
+          },
+          "ScraperId": {
+            "StringValue": "{% $states.input.scraperId %}",
+            "DataType": "String"
+          },
+          "Organization": {
+            "StringValue": "{% $states.input.organization %}",
+            "DataType": "String"
+          },
+          "UpdateType": {
+            "StringValue": "infrastructure_as_code",
+            "DataType": "String"
+          },
+          "ResourceCount": {
+            "StringValue": "{% $string($states.input.summary.totalAwsResources) %}",
+            "DataType": "Number"
+          }
+        }
+      },
+      "Output": "{% $merge([$states.input, {'neptuneQueued': true, 'messageId': $states.result.MessageId}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'neptuneError': $states.errorOutput, 'neptuneQueued': false}]) %}",
+          "Next": "FinalizeGitHubTerraformResults"
+        }
+      ],
+      "Next": "FinalizeGitHubTerraformResults"
+    },
+    "FinalizeGitHubTerraformResults": {
+      "Type": "Pass",
+      "Comment": "Finalize GitHub Terraform scanning results with comprehensive metrics",
+      "QueryLanguage": "JSONata",
+      "Output": "{% {'scraperId': $states.input.scraperId, 'organization': $states.input.organization, 'scanType': $states.input.scanType, 'completedAt': $now(), 'source': 'github_terraform_scan', 'summary': $states.input.summary, 'storageResults': {'summaryStored': $states.input.storageResults[0].summaryStored, 'detailedStored': $states.input.storageResults[1].detailedStored}, 'neptuneQueued': $states.input.neptuneQueued, 'metrics': {'totalRepositoriesScanned': $states.input.summary.totalRepositories, 'terraformRepositoriesFound': $states.input.summary.terraformRepositories, 'awsResourcesDiscovered': $states.input.summary.totalAwsResources, 'executionTime': ($millis() - $number($states.input.timestamp)) & 'ms', 'repositoriesWithTerraform': $states.input.summary.processedRepositories}, 'data': {'repositoryBreakdown': $states.input.data.repositoryBreakdown, 'resourceTypeBreakdown': $states.input.summary.resourceTypeBreakdown}} %}",
+      "End": true
+    }
+  }
+}

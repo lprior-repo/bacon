@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(terraform *)",
+      "Bash(cd beacon-infra && *)",
+      "Write(./beacon-infra/*)",
+      "Edit(./beacon-infra/*)",
+      "MultiEdit(./beacon-infra/*)"
+    ],
+    "additionalDirectories": ["./beacon-infra"]
+  }
+}

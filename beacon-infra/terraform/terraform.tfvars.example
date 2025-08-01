@@ -1,0 +1,13 @@
+# Environment Configuration
+env          = "dev"
+aws_region   = "us-east-1"
+project_name = "beacon"
+
+# Existing Infrastructure
+existing_vpc_id = "vpc-0123456789abcdef0"
+existing_private_subnet_ids = [
+  "subnet-0123abc",
+  "subnet-4567def"
+]
+
+# Copy this file to terraform.tfvars and update with your actual values

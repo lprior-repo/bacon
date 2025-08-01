@@ -1,0 +1,405 @@
+{
+  "Comment": "Cost-optimized unified HIPAA scraper with intelligent caching, delta updates, and batch processing for 15k+ resources",
+  "StartAt": "InitializeCostOptimizedScraperContext",
+  "QueryLanguage": "JSONata",
+  "StateMachineType": "EXPRESS",
+  "States": {
+    "InitializeCostOptimizedScraperContext": {
+      "Type": "Pass",
+      "Comment": "Initialize cost-optimized scraper with intelligent caching strategy",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "scraperId": "{% $uuid() %}",
+        "timestamp": "{% $now() %}",
+        "accountId": "{% $states.input.accountId %}",
+        "resourceExplorerViewArn": "{% $states.input.resourceExplorerViewArn %}",
+        "updateMode": "{% $states.input.updateMode ? $states.input.updateMode : 'delta' %}",
+        "batchSize": "{% $states.input.batchSize ? $states.input.batchSize : 500 %}",
+        "hipaaServices": [
+          {"name": "amplify-console", "resourceType": "amplify:app", "cacheDays": 1, "priority": "medium"},
+          {"name": "api-gateway", "resourceType": "apigateway:restapi", "cacheDays": 0.5, "priority": "high"},
+          {"name": "api-gateway-v2", "resourceType": "apigatewayv2:api", "cacheDays": 0.5, "priority": "high"},
+          {"name": "dynamodb", "resourceType": "dynamodb:table", "cacheDays": 0.25, "priority": "critical"},
+          {"name": "ec2-instances", "resourceType": "ec2:instance", "cacheDays": 0.125, "priority": "critical"},
+          {"name": "lambda", "resourceType": "lambda:function", "cacheDays": 0.25, "priority": "high"},
+          {"name": "rds-instances", "resourceType": "rds:db", "cacheDays": 0.5, "priority": "high"},
+          {"name": "s3", "resourceType": "s3:bucket", "cacheDays": 2, "priority": "medium"},
+          {"name": "kms", "resourceType": "kms:key", "cacheDays": 7, "priority": "low"},
+          {"name": "secrets-manager", "resourceType": "secretsmanager:secret", "cacheDays": 3, "priority": "medium"}
+        ]
+      },
+      "Output": "{% {'scraperId': $scraperId, 'timestamp': $timestamp, 'accountId': $accountId, 'resourceExplorerViewArn': $resourceExplorerViewArn, 'updateMode': $updateMode, 'batchSize': $batchSize, 'hipaaServices': $hipaaServices} %}",
+      "Next": "CheckLastFullScrapeTime"
+    },
+    "CheckLastFullScrapeTime": {
+      "Type": "Task",
+      "Comment": "Check when the last full scrape was performed to determine update strategy",
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:getItem",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+        "Key": {
+          "pk": {"S": "{% 'HIPAA_SCRAPE_METADATA#' & $states.input.accountId %}"},
+          "sk": {"S": "LAST_FULL_SCRAPE"}
+        },
+        "ConsistentRead": true
+      },
+      "Output": "{% $merge([$states.input, {'lastFullScrapeResult': $states.result}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'lastFullScrapeError': $states.errorOutput, 'forceFullScrape': true}]) %}",
+          "Next": "DetermineUpdateStrategy"
+        }
+      ],
+      "Next": "DetermineUpdateStrategy"
+    },
+    "DetermineUpdateStrategy": {
+      "Type": "Pass",
+      "Comment": "Determine whether to do full scrape, delta update, or use cached data based on age and priority",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "currentTime": "{% $millis() %}",
+        "lastFullScrape": "{% $exists($states.input.lastFullScrapeResult.Item) ? $number($states.input.lastFullScrapeResult.Item.timestamp.S) : 0 %}",
+        "daysSinceFullScrape": "{% ($currentTime - $lastFullScrape) / 86400000 %}",
+        "needsFullScrape": "{% $states.input.forceFullScrape or $daysSinceFullScrape > 7 or $states.input.updateMode = 'full' %}",
+        "servicesToProcess": "{% $needsFullScrape ? $states.input.hipaaServices : $filter($states.input.hipaaServices, function($service) { $daysSinceFullScrape > $service.cacheDays or $service.priority = 'critical' }) %}"
+      },
+      "Output": "{% $merge([$states.input, {'needsFullScrape': $needsFullScrape, 'servicesToProcess': $servicesToProcess, 'daysSinceFullScrape': $daysSinceFullScrape, 'totalServicesToProcess': $count($servicesToProcess)}]) %}",
+      "Next": "EvaluateProcessingNeeds"
+    },
+    "EvaluateProcessingNeeds": {
+      "Type": "Choice",
+      "Comment": "Decide processing strategy based on services that need updates",
+      "QueryLanguage": "JSONata",
+      "Choices": [
+        {
+          "Condition": "{% $states.input.totalServicesToProcess = 0 %}",
+          "Output": "{% {'source': 'all_cached', 'message': 'All services within cache window', 'scraperId': $states.input.scraperId} %}",
+          "Next": "ReturnCachedStatus"
+        },
+        {
+          "Condition": "{% $states.input.totalServicesToProcess <= 3 %}",
+          "Next": "ProcessSmallBatch"
+        }
+      ],
+      "Default": "ProcessLargeBatchWithOptimization"
+    },
+    "ReturnCachedStatus": {
+      "Type": "Pass",
+      "Comment": "Return status indicating cached data is being used",
+      "QueryLanguage": "JSONata",
+      "Output": "{% {'source': 'cache', 'scraperId': $states.input.scraperId, 'message': 'All critical services cached, no updates needed', 'daysSinceFullScrape': $states.input.daysSinceFullScrape} %}",
+      "End": true
+    },
+    "ProcessSmallBatch": {
+      "Type": "Map",
+      "Comment": "Process small number of services with full detail retrieval",
+      "QueryLanguage": "JSONata",
+      "Items": "{% $states.input.servicesToProcess %}",
+      "MaxConcurrency": 3,
+      "ItemSelector": {
+        "serviceName": "{% $states.context.Map.Item.Value.name %}",
+        "resourceType": "{% $states.context.Map.Item.Value.resourceType %}",
+        "priority": "{% $states.context.Map.Item.Value.priority %}",
+        "accountId": "{% $states.input.accountId %}",
+        "resourceExplorerViewArn": "{% $states.input.resourceExplorerViewArn %}",
+        "scraperId": "{% $states.input.scraperId %}",
+        "fullDetail": true
+      },
+      "ItemProcessor": {
+        "StartAt": "ProcessSingleServiceDetailed",
+        "States": {
+          "ProcessSingleServiceDetailed": {
+            "Type": "Task",
+            "Comment": "Get full resource details including all tags for small batch",
+            "Resource": "arn:aws:states:::aws-sdk:resourceExplorer2:search",
+            "QueryLanguage": "JSONata",
+            "Arguments": {
+              "QueryString": "{% 'resourcetype:' & $states.input.resourceType %}",
+              "ViewArn": "{% $states.input.resourceExplorerViewArn %}",
+              "MaxResults": 1000,
+              "IncludedProperties": [
+                {
+                  "Name": "tags"
+                },
+                {
+                  "Name": "region"
+                },
+                {
+                  "Name": "arn"
+                },
+                {
+                  "Name": "lastModified"
+                }
+              ]
+            },
+            "Output": "{% {'serviceName': $states.input.serviceName, 'priority': $states.input.priority, 'resourceType': $states.input.resourceType, 'resources': $states.result.Resources, 'fullDetail': true, 'totalResources': $count($states.result.Resources), 'lastScraped': $now(), 'scrapeSuccess': true} %}",
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "Output": "{% {'serviceName': $states.input.serviceName, 'priority': $states.input.priority, 'resourceType': $states.input.resourceType, 'resources': [], 'error': $states.errorOutput, 'totalResources': 0, 'lastScraped': $now(), 'scrapeSuccess': false} %}",
+                "Next": "HandleServiceError"
+              }
+            ],
+            "End": true
+          },
+          "HandleServiceError": {
+            "Type": "Pass",
+            "QueryLanguage": "JSONata",
+            "Output": "{% $states.input %}",
+            "End": true
+          }
+        }
+      },
+      "Output": "{% $merge([$states.input, {'serviceResults': $states.result, 'processingMode': 'small_batch'}]) %}",
+      "Next": "StoreSmallBatchResults"
+    },
+    "ProcessLargeBatchWithOptimization": {
+      "Type": "Map",
+      "Comment": "Process large number of services with optimized batch processing and minimal data retrieval",
+      "QueryLanguage": "JSONData",
+      "Items": "{% $partition($states.input.servicesToProcess, 5) %}",
+      "MaxConcurrency": 8,
+      "ItemSelector": {
+        "serviceBatch": "{% $states.context.Map.Item.Value %}",
+        "accountId": "{% $states.input.accountId %}",
+        "resourceExplorerViewArn": "{% $states.input.resourceExplorerViewArn %}",
+        "scraperId": "{% $states.input.scraperId %}",
+        "batchIndex": "{% $states.context.Map.Item.Index %}"
+      },
+      "ItemProcessor": {
+        "StartAt": "ProcessServiceBatch",
+        "States": {
+          "ProcessServiceBatch": {
+            "Type": "Map",
+            "Comment": "Process each service in the batch with optimized queries",
+            "QueryLanguage": "JSONata",
+            "Items": "{% $states.input.serviceBatch %}",
+            "MaxConcurrency": 5,
+            "ItemSelector": {
+              "serviceName": "{% $states.context.Map.Item.Value.name %}",
+              "resourceType": "{% $states.context.Map.Item.Value.resourceType %}",
+              "priority": "{% $states.context.Map.Item.Value.priority %}",
+              "accountId": "{% $states.input.accountId %}",
+              "resourceExplorerViewArn": "{% $states.input.resourceExplorerViewArn %}",
+              "optimized": true
+            },
+            "ItemProcessor": {
+              "StartAt": "ProcessSingleServiceOptimized",
+              "States": {
+                "ProcessSingleServiceOptimized": {
+                  "Type": "Task",
+                  "Comment": "Get optimized resource data with essential tags only",
+                  "Resource": "arn:aws:states:::aws-sdk:resourceExplorer2:search",
+                  "QueryLanguage": "JSONata",
+                  "Arguments": {
+                    "QueryString": "{% 'resourcetype:' & $states.input.resourceType %}",
+                    "ViewArn": "{% $states.input.resourceExplorerViewArn %}",
+                    "MaxResults": 1000
+                  },
+                  "Output": "{% {'serviceName': $states.input.serviceName, 'priority': $states.input.priority, 'resourceType': $states.input.resourceType, 'resources': $map($states.result.Resources, function($resource) { {'arn': $resource.Arn, 'region': $resource.Region, 'tags': $reduce($keys($resource.Properties)[$ ~> /^tag:/], function($acc, $tagKey) { $merge([$acc, {$substring($tagKey, 4): $resource.Properties[$tagKey]}]) }, {})} }), 'totalResources': $count($states.result.Resources), 'optimized': true, 'lastScraped': $now(), 'scrapeSuccess': true} %}",
+                  "Catch": [
+                    {
+                      "ErrorEquals": ["States.ALL"],
+                      "Output": "{% {'serviceName': $states.input.serviceName, 'priority': $states.input.priority, 'resourceType': $states.input.resourceType, 'resources': [], 'error': $states.errorOutput, 'totalResources': 0, 'optimized': true, 'lastScraped': $now(), 'scrapeSuccess': false} %>",
+                      "Next": "HandleOptimizedServiceError"
+                    }
+                  ],
+                  "End": true
+                },
+                "HandleOptimizedServiceError": {
+                  "Type": "Pass",
+                  "QueryLanguage": "JSONata",
+                  "Output": "{% $states.input %}",
+                  "End": true
+                }
+              }
+            },
+            "Output": "{% {'batchIndex': $states.input.batchIndex, 'batchResults': $states.result} %}",
+            "End": true
+          }
+        }
+      },
+      "Output": "{% $merge([$states.input, {'batchResults': $states.result, 'processingMode': 'large_batch_optimized'}]) %}",
+      "Next": "AggregateLargeBatchResults"
+    },
+    "AggregateLargeBatchResults": {
+      "Type": "Pass",
+      "Comment": "Aggregate results from large batch processing into unified structure",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "allServiceResults": "{% $reduce($states.input.batchResults, function($acc, $batch) { $append($acc, $batch.batchResults) }, []) %}",
+        "totalResourcesFound": "{% $sum($allServiceResults.totalResources) %}",
+        "successfulServices": "{% $count($allServiceResults[scrapeSuccess = true]) %}",
+        "failedServices": "{% $count($allServiceResults[scrapeSuccess = false]) %}"
+      },
+      "Output": "{% $merge([$states.input, {'serviceResults': $allServiceResults, 'aggregatedStats': {'totalResources': $totalResourcesFound, 'successfulServices': $successfulServices, 'failedServices': $failedServices}}]) %}",
+      "Next": "StoreLargeBatchResults"
+    },
+    "StoreSmallBatchResults": {
+      "Type": "Task",
+      "Comment": "Store small batch results with full detail in DynamoDB",
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+        "Item": {
+          "pk": {"S": "{% 'HIPAA_SMALL_BATCH#' & $states.input.accountId %}"},
+          "sk": {"S": "{% $states.input.scraperId %}"},
+          "scraperId": {"S": "{% $states.input.scraperId %}"},
+          "accountId": {"S": "{% $states.input.accountId %}"},
+          "processingMode": {"S": "small_batch"},
+          "lastScraped": {"S": "{% $millis() ~> $string %}"},
+          "serviceResults": {"S": "{% $string($states.input.serviceResults) %}"},
+          "totalResources": {"N": "{% $string($sum($states.input.serviceResults.totalResources)) %}"},
+          "ttl": {"N": "{% ($millis() + 172800000) ~> $string %}"}
+        }
+      },
+      "Output": "{% $merge([$states.input, {'dataStored': true, 'storageMode': 'small_batch'}]) %}",
+      "Next": "UpdateLastScrapeMetadata"
+    },
+    "StoreLargeBatchResults": {
+      "Type": "Parallel",
+      "Comment": "Store large batch results using parallel writes to optimize performance",
+      "QueryLanguage": "JSONata",
+      "Branches": [
+        {
+          "StartAt": "StoreSummaryData",
+          "States": {
+            "StoreSummaryData": {
+              "Type": "Task",
+              "Comment": "Store summary data for quick access",
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem",
+              "QueryLanguage": "JSONata",
+              "Arguments": {
+                "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+                "Item": {
+                  "pk": {"S": "{% 'HIPAA_SUMMARY#' & $states.input.accountId %}"},
+                  "sk": {"S": "{% $states.input.scraperId %}"},
+                  "scraperId": {"S": "{% $states.input.scraperId %}"},
+                  "accountId": {"S": "{% $states.input.accountId %}"},
+                  "processingMode": {"S": "large_batch_optimized"},
+                  "lastScraped": {"S": "{% $millis() ~> $string %}"},
+                  "aggregatedStats": {"S": "{% $string($states.input.aggregatedStats) %}"},
+                  "totalResources": {"N": "{% $string($states.input.aggregatedStats.totalResources) %}"},
+                  "ttl": {"N": "{% ($millis() + 172800000) ~> $string %}"}
+                }
+              },
+              "Output": "{% {'summaryStored': true} %}",
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "StoreCompressedData",
+          "States": {
+            "StoreCompressedData": {
+              "Type": "Task",
+              "Comment": "Store compressed service results for cost optimization",
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem",
+              "QueryLanguage": "JSONata",
+              "Arguments": {
+                "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+                "Item": {
+                  "pk": {"S": "{% 'HIPAA_COMPRESSED#' & $states.input.accountId %}"},
+                  "sk": {"S": "{% $states.input.scraperId %}"},
+                  "scraperId": {"S": "{% $states.input.scraperId %}"},
+                  "accountId": {"S": "{% $states.input.accountId %}"},
+                  "processingMode": {"S": "large_batch_optimized"},
+                  "lastScraped": {"S": "{% $millis() ~> $string %}"},
+                  "compressedResults": {"S": "{% $string($map($states.input.serviceResults, function($service) { {'serviceName': $service.serviceName, 'resourceCount': $service.totalResources, 'priority': $service.priority, 'success': $service.scrapeSuccess, 'resourceArns': $map($service.resources, function($r) { $r.arn })} })) %}"},
+                  "totalResources": {"N": "{% $string($states.input.aggregatedStats.totalResources) %}"},
+                  "ttl": {"N": "{% ($millis() + 172800000) ~> $string %}"}
+                }
+              },
+              "Output": "{% {'compressedStored': true} %}",
+              "End": true
+            }
+          }
+        }
+      ],
+      "Output": "{% $merge([$states.input, {'dataStored': true, 'storageMode': 'large_batch_parallel', 'storageResults': $states.result}]) %}",
+      "Next": "UpdateLastScrapeMetadata"
+    },
+    "UpdateLastScrapeMetadata": {
+      "Type": "Task",
+      "Comment": "Update metadata about the last scrape for future optimization decisions",
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+        "Item": {
+          "pk": {"S": "{% 'HIPAA_SCRAPE_METADATA#' & $states.input.accountId %}"},
+          "sk": {"S": "{% $states.input.needsFullScrape ? 'LAST_FULL_SCRAPE' : 'LAST_DELTA_SCRAPE' %}"},
+          "scraperId": {"S": "{% $states.input.scraperId %}"},
+          "accountId": {"S": "{% $states.input.accountId %}"},
+          "timestamp": {"S": "{% $millis() ~> $string %}"},
+          "scrapeType": {"S": "{% $states.input.needsFullScrape ? 'full' : 'delta' %}"},
+          "servicesProcessed": {"N": "{% $string($states.input.totalServicesToProcess) %}"},
+          "totalResources": {"N": "{% $string($states.input.processingMode = 'small_batch' ? $sum($states.input.serviceResults.totalResources) : $states.input.aggregatedStats.totalResources) %}"},
+          "ttl": {"N": "{% ($millis() + 2592000000) ~> $string %}"}
+        }
+      },
+      "Output": "{% $merge([$states.input, {'metadataUpdated': true}]) %}",
+      "Next": "PrepareOptimizedNeptuneUpdate"
+    },
+    "PrepareOptimizedNeptuneUpdate": {
+      "Type": "Choice",
+      "Comment": "Decide Neptune update strategy based on data size and processing mode",
+      "QueryLanguage": "JSONata",
+      "Choices": [
+        {
+          "Condition": "{% $states.input.processingMode = 'small_batch' or ($states.input.aggregatedStats.totalResources < 1000) %}",
+          "Next": "SendDirectNeptuneUpdate"
+        }
+      ],
+      "Default": "QueueNeptuneUpdateForBatchProcessing"
+    },
+    "SendDirectNeptuneUpdate": {
+      "Type": "Task",
+      "Comment": "Send small dataset directly to Neptune for immediate processing",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "QueueUrl": "{% $states.input.neptuneUpdateQueueUrl %}",
+        "MessageBody": "{% $string({'updateType': 'direct_small', 'scraperId': $states.input.scraperId, 'accountId': $states.input.accountId, 'serviceResults': $states.input.serviceResults, 'processingMode': $states.input.processingMode, 'totalResources': $states.input.processingMode = 'small_batch' ? $sum($states.input.serviceResults.totalResources) : $states.input.aggregatedStats.totalResources}) %}",
+        "MessageAttributes": {
+          "UpdateType": {"StringValue": "direct_small", "DataType": "String"},
+          "ScraperId": {"StringValue": "{% $states.input.scraperId %}", "DataType": "String"},
+          "AccountId": {"StringValue": "{% $states.input.accountId %}", "DataType": "String"},
+          "ResourceCount": {"StringValue": "{% $string($states.input.processingMode = 'small_batch' ? $sum($states.input.serviceResults.totalResources) : $states.input.aggregatedStats.totalResources) %}", "DataType": "Number"}
+        }
+      },
+      "Output": "{% $merge([$states.input, {'neptuneQueued': true, 'neptuneUpdateType': 'direct_small', 'messageId': $states.result.MessageId}]) %}",
+      "Next": "FinalizeCostOptimizedResults"
+    },
+    "QueueNeptuneUpdateForBatchProcessing": {
+      "Type": "Task",
+      "Comment": "Queue large dataset for batch processing by Neptune to manage costs",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "QueueUrl": "{% $states.input.neptuneBatchQueueUrl %}",
+        "MessageBody": "{% $string({'updateType': 'batch_large', 'scraperId': $states.input.scraperId, 'accountId': $states.input.accountId, 'cacheKey': 'HIPAA_COMPRESSED#' & $states.input.accountId & '#' & $states.input.scraperId, 'totalResources': $states.input.aggregatedStats.totalResources, 'processingMode': $states.input.processingMode}) %}",
+        "MessageAttributes": {
+          "UpdateType": {"StringValue": "batch_large", "DataType": "String"},
+          "ScraperId": {"StringValue": "{% $states.input.scraperId %}", "DataType": "String"},
+          "AccountId": {"StringValue": "{% $states.input.accountId %}", "DataType": "String"},
+          "ResourceCount": {"StringValue": "{% $string($states.input.aggregatedStats.totalResources) %}", "DataType": "Number"},
+          "Priority": {"StringValue": "normal", "DataType": "String"}
+        },
+        "DelaySeconds": 300
+      },
+      "Output": "{% $merge([$states.input, {'neptuneQueued': true, 'neptuneUpdateType': 'batch_large', 'messageId': $states.result.MessageId}]) %}",
+      "Next": "FinalizeCostOptimizedResults"
+    },
+    "FinalizeCostOptimizedResults": {
+      "Type": "Pass",
+      "Comment": "Finalize cost-optimized scraper results with comprehensive metrics and cost projections",
+      "QueryLanguage": "JSONata",
+      "Output": "{% {'scraperId': $states.input.scraperId, 'accountId': $states.input.accountId, 'completedAt': $now(), 'source': 'cost_optimized_scrape', 'processingMode': $states.input.processingMode, 'scrapeType': $states.input.needsFullScrape ? 'full' : 'delta', 'dataStored': $states.input.dataStored, 'metadataUpdated': $states.input.metadataUpdated, 'neptuneQueued': $states.input.neptuneQueued, 'neptuneUpdateType': $states.input.neptuneUpdateType, 'metrics': {'servicesProcessed': $states.input.totalServicesToProcess, 'totalResources': $states.input.processingMode = 'small_batch' ? $sum($states.input.serviceResults.totalResources) : $states.input.aggregatedStats.totalResources, 'executionTime': ($millis() - $number($states.input.timestamp)) & 'ms', 'resourceExplorerQueries': $states.input.totalServicesToProcess, 'daysSinceFullScrape': $states.input.daysSinceFullScrape, 'estimatedMonthlyCost': {'dynamoDB': $round(($states.input.processingMode = 'small_batch' ? $sum($states.input.serviceResults.totalResources) : $states.input.aggregatedStats.totalResources) * 0.003, 2) & ' USD', 'resourceExplorer': $round($states.input.totalServicesToProcess * 0.0015, 4) & ' USD'}}, 'optimizations': ['intelligent_caching', 'delta_updates', 'batch_processing', 'compressed_storage', 'priority_based_scheduling']} %}",
+      "End": true
+    }
+  }
+}

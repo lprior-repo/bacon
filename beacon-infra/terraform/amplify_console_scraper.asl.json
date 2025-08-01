@@ -1,0 +1,303 @@
+{
+  "Comment": "Express Step Function to scrape AWS Amplify Console data using Resource Explorer with JSONata transformations and DynamoDB caching",
+  "StartAt": "InitializeAmplifyScraperContext",
+  "QueryLanguage": "JSONata",
+  "StateMachineType": "EXPRESS",
+  "States": {
+    "InitializeAmplifyScraperContext": {
+      "Type": "Pass",
+      "Comment": "Initialize scraper context and validate input parameters",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "scraperId": "{% $uuid() %}",
+        "serviceType": "amplify-console",
+        "timestamp": "{% $now() %}",
+        "accountId": "{% $states.input.accountId %}",
+        "resourceExplorerViewArn": "{% $states.input.resourceExplorerViewArn %}"
+      },
+      "Output": "{% {'scraperId': $scraperId, 'serviceType': $serviceType, 'timestamp': $timestamp, 'accountId': $accountId, 'resourceExplorerViewArn': $resourceExplorerViewArn} %}",
+      "Next": "CheckCacheForRecentScrape"
+    },
+    "CheckCacheForRecentScrape": {
+      "Type": "Task",
+      "Comment": "Check DynamoDB cache for recent Amplify scrape data",
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:getItem",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+        "Key": {
+          "pk": {"S": "{% 'SCRAPE_CACHE#' & $accountId %}"},
+          "sk": {"S": "{% $serviceType & '#LATEST' %}"}
+        },
+        "ConsistentRead": true
+      },
+      "Output": "{% $merge([$states.input, {'cacheResult': $states.result}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'cacheError': $states.errorOutput, 'proceedWithScrape': true}]) %}",
+          "Next": "DiscoverAmplifyResourcesWithExplorer"
+        }
+      ],
+      "Next": "EvaluateCacheAge"
+    },
+    "EvaluateCacheAge": {
+      "Type": "Choice",
+      "Comment": "Determine if cached data is recent enough (1 hour) to skip scraping",
+      "QueryLanguage": "JSONata",
+      "Choices": [
+        {
+          "Condition": "{% $exists($states.input.cacheResult.Item) and ($millis() - $number($states.input.cacheResult.Item.lastScraped.S)) < 3600000 %}",
+          "Output": "{% {'useCache': true, 'cachedData': $states.input.cacheResult.Item} %}",
+          "Next": "ReturnCachedResults"
+        }
+      ],
+      "Default": "DiscoverAmplifyResourcesWithExplorer"
+    },
+    "ReturnCachedResults": {
+      "Type": "Pass",
+      "Comment": "Return cached Amplify data without performing fresh scrape",
+      "QueryLanguage": "JSONata",
+      "Output": "{% {'source': 'cache', 'data': $parse($states.input.cachedData.amplifyData.S), 'timestamp': $states.input.cachedData.lastScraped.S, 'scraperId': $states.input.scraperId} %}",
+      "End": true
+    },
+    "DiscoverAmplifyResourcesWithExplorer": {
+      "Type": "Task",
+      "Comment": "Use Resource Explorer to discover all Amplify apps across regions efficiently",
+      "Resource": "arn:aws:states:::aws-sdk:resourceExplorer2:search",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "QueryString": "resourcetype:amplify:app",
+        "ViewArn": "{% $states.input.resourceExplorerViewArn %}",
+        "MaxResults": 1000
+      },
+      "Output": "{% $merge([$states.input, {'discoveredResources': $states.result.Resources, 'nextToken': $states.result.NextToken}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'explorerError': $states.errorOutput, 'discoveredResources': []}]) %}",
+          "Next": "HandleExplorerError"
+        }
+      ],
+      "Next": "CheckForMoreResources"
+    },
+    "CheckForMoreResources": {
+      "Type": "Choice",
+      "Comment": "Check if there are more resources to retrieve with pagination",
+      "QueryLanguage": "JSONata",
+      "Choices": [
+        {
+          "Condition": "{% $exists($states.input.nextToken) %}",
+          "Next": "FetchMoreAmplifyResources"
+        }
+      ],
+      "Default": "EnrichAmplifyResourcesWithDetails"
+    },
+    "FetchMoreAmplifyResources": {
+      "Type": "Task",
+      "Comment": "Continue fetching Amplify resources using pagination token",
+      "Resource": "arn:aws:states:::aws-sdk:resourceExplorer2:search",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "QueryString": "resourcetype:amplify:app",
+        "ViewArn": "{% $states.input.resourceExplorerViewArn %}",
+        "MaxResults": 1000,
+        "NextToken": "{% $states.input.nextToken %}"
+      },
+      "Output": "{% $merge([$states.input, {'discoveredResources': $append($states.input.discoveredResources, $states.result.Resources), 'nextToken': $states.result.NextToken}]) %}",
+      "Next": "CheckForMoreResources"
+    },
+    "EnrichAmplifyResourcesWithDetails": {
+      "Type": "Map",
+      "Comment": "Enrich each discovered Amplify resource with detailed information and tags",
+      "QueryLanguage": "JSONata",
+      "Items": "{% $states.input.discoveredResources %}",
+      "MaxConcurrency": 10,
+      "ItemSelector": {
+        "resourceArn": "{% $states.context.Map.Item.Value.Arn %}",
+        "region": "{% $states.context.Map.Item.Value.Region %}",
+        "appId": "{% $split($states.context.Map.Item.Value.Arn, '/')[1] %}",
+        "basicInfo": "{% $states.context.Map.Item.Value %}"
+      },
+      "ItemProcessor": {
+        "StartAt": "GetAmplifyAppDetails",
+        "States": {
+          "GetAmplifyAppDetails": {
+            "Type": "Parallel",
+            "Comment": "Fetch detailed app information and tags concurrently",
+            "QueryLanguage": "JSONata",
+            "Branches": [
+              {
+                "StartAt": "GetAppDetailsAndBranches",
+                "States": {
+                  "GetAppDetailsAndBranches": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::aws-sdk:amplify:getApp",
+                    "QueryLanguage": "JSONata",
+                    "Arguments": {
+                      "appId": "{% $states.input.appId %}"
+                    },
+                    "Output": "{% {'appDetails': $states.result.app} %}",
+                    "Catch": [
+                      {
+                        "ErrorEquals": ["States.ALL"],
+                        "Output": "{% {'appDetails': null, 'error': $states.errorOutput} %}",
+                        "Next": "ReturnEmptyAppDetails"
+                      }
+                    ],
+                    "End": true
+                  },
+                  "ReturnEmptyAppDetails": {
+                    "Type": "Pass",
+                    "QueryLanguage": "JSONata",
+                    "Output": "{% {'appDetails': null} %}",
+                    "End": true
+                  }
+                }
+              },
+              {
+                "StartAt": "GetAppTags",
+                "States": {
+                  "GetAppTags": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::aws-sdk:amplify:listTagsForResource",
+                    "QueryLanguage": "JSONata",
+                    "Arguments": {
+                      "resourceArn": "{% $states.input.resourceArn %}"
+                    },
+                    "Output": "{% {'tags': $states.result.tags} %}",
+                    "Catch": [
+                      {
+                        "ErrorEquals": ["States.ALL"],
+                        "Output": "{% {'tags': {}, 'tagError': $states.errorOutput} %}",
+                        "Next": "ReturnEmptyTags"
+                      }
+                    ],
+                    "End": true
+                  },
+                  "ReturnEmptyTags": {
+                    "Type": "Pass",
+                    "QueryLanguage": "JSONata",
+                    "Output": "{% {'tags': {}} %}",
+                    "End": true
+                  }
+                }
+              }
+            ],
+            "Output": "{% {'appId': $states.input.appId, 'region': $states.input.region, 'resourceArn': $states.input.resourceArn, 'basicInfo': $states.input.basicInfo, 'detailedInfo': $states.result[0].appDetails, 'tags': $states.result[1].tags, 'lastScraped': $now(), 'enrichmentSuccess': $states.result[0].appDetails != null} %}",
+            "End": true
+          }
+        }
+      },
+      "Output": "{% $merge([$states.input, {'enrichedApps': $states.result}]) %}",
+      "Next": "AggregateAmplifyResults"
+    },
+    "HandleExplorerError": {
+      "Type": "Pass",
+      "Comment": "Handle Resource Explorer errors gracefully",
+      "QueryLanguage": "JSONata",
+      "Output": "{% $merge([$states.input, {'enrichedApps': [], 'explorerFailed': true}]) %}",
+      "Next": "AggregateAmplifyResults"
+    },
+    "AggregateAmplifyResults": {
+      "Type": "Pass",
+      "Comment": "Aggregate and transform Amplify data into unified structure with associations",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "totalApps": "{% $count($states.input.enrichedApps) %}",
+        "successfulEnrichments": "{% $count($states.input.enrichedApps[enrichmentSuccess = true]) %}",
+        "failedEnrichments": "{% $count($states.input.enrichedApps[enrichmentSuccess = false]) %}",
+        "regionBreakdown": "{% $reduce($states.input.enrichedApps, function($acc, $app) { $merge([$acc, {$app.region: ($acc[$app.region] ? $acc[$app.region] + 1 : 1)}]) }, {}) %}",
+        "taggedApps": "{% $count($states.input.enrichedApps[$count($keys(tags)) > 0]) %}",
+        "associations": "{% $map($states.input.enrichedApps, function($app) { {'appId': $app.appId, 'accountOwnership': {'accountId': $accountId, 'relationship': 'owns'}, 'regionalPlacement': {'region': $app.region, 'relationship': 'deployed_in'}, 'tagging': $map($keys($app.tags), function($key) { {'key': $key, 'value': $app.tags[$key], 'relationship': 'tagged_with'} })} }) %}"
+      },
+      "Output": "{% {'scraperId': $states.input.scraperId, 'serviceType': $states.input.serviceType, 'accountId': $states.input.accountId, 'timestamp': $states.input.timestamp, 'summary': {'totalApps': $totalApps, 'successfulEnrichments': $successfulEnrichments, 'failedEnrichments': $failedEnrichments, 'regionBreakdown': $regionBreakdown, 'taggedApps': $taggedApps}, 'data': {'amplifyApps': $states.input.enrichedApps, 'associations': $associations}, 'explorerUsed': true} %}",
+      "Next": "StoreResultsInDynamoDB"
+    },
+    "StoreResultsInDynamoDB": {
+      "Type": "Task",
+      "Comment": "Store scraped Amplify data in DynamoDB cache table with TTL",
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:putItem",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "TableName": "{% $states.input.cacheTableName ? $states.input.cacheTableName : 'aws-scraper-cache' %}",
+        "Item": {
+          "pk": {"S": "{% 'SCRAPE_CACHE#' & $states.input.accountId %}"},
+          "sk": {"S": "{% $states.input.serviceType & '#LATEST' %}"},
+          "scraperId": {"S": "{% $states.input.scraperId %}"},
+          "serviceType": {"S": "{% $states.input.serviceType %}"},
+          "accountId": {"S": "{% $states.input.accountId %}"},
+          "lastScraped": {"S": "{% $millis() ~> $string %}"},
+          "amplifyData": {"S": "{% $string($states.input.data) %}"},
+          "summary": {"S": "{% $string($states.input.summary) %}"},
+          "ttl": {"N": "{% ($millis() + 86400000) ~> $string %}"}
+        }
+      },
+      "Output": "{% $merge([$states.input, {'cacheStored': true, 'cacheKey': 'SCRAPE_CACHE#' & $states.input.accountId & '#' & $states.input.serviceType}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'cacheError': $states.errorOutput, 'cacheStored': false}]) %}",
+          "Next": "PrepareNeptuneUpdate"
+        }
+      ],
+      "Next": "PrepareNeptuneUpdate"
+    },
+    "PrepareNeptuneUpdate": {
+      "Type": "Pass",
+      "Comment": "Transform Amplify data for Neptune graph database with comprehensive relationships",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "neptuneVertices": "{% $append($map($states.input.data.amplifyApps, function($app) { {'id': $app.appId, 'label': 'AmplifyApp', 'properties': {'name': $app.detailedInfo.name, 'region': $app.region, 'status': $app.detailedInfo.enabledBranchCount, 'createdTime': $app.detailedInfo.createTime, 'platform': $app.detailedInfo.platform, 'repository': $app.detailedInfo.repository, 'arn': $app.resourceArn, 'lastScraped': $app.lastScraped}} }), [{'id': $states.input.accountId, 'label': 'AWSAccount', 'properties': {'accountId': $states.input.accountId, 'lastScanned': $now()}}]) %}",
+        "neptuneEdges": "{% $reduce($states.input.data.amplifyApps, function($acc, $app) { $append($acc, [{'from': $states.input.accountId, 'to': $app.appId, 'label': 'OWNS', 'properties': {'relationship': 'ownership', 'discoveredAt': $app.lastScraped}}, {'from': $app.appId, 'to': $app.region, 'label': 'DEPLOYED_IN', 'properties': {'relationship': 'regional_deployment', 'discoveredAt': $app.lastScraped}}]) }, []) %}",
+        "tagEdges": "{% $reduce($states.input.data.amplifyApps, function($acc, $app) { $append($acc, $map($keys($app.tags), function($tagKey) { {'from': $app.appId, 'to': $tagKey & ':' & $app.tags[$tagKey], 'label': 'TAGGED_WITH', 'properties': {'tagKey': $tagKey, 'tagValue': $app.tags[$tagKey], 'discoveredAt': $app.lastScraped}} })) }, []) %}"
+      },
+      "Output": "{% $merge([$states.input, {'neptuneUpdate': {'vertices': $neptuneVertices, 'edges': $append($neptuneEdges, $tagEdges), 'updateType': 'amplify_scrape', 'timestamp': $now(), 'associations': $states.input.data.associations}}]) %}",
+      "Next": "UpdateNeptuneGraph"
+    },
+    "UpdateNeptuneGraph": {
+      "Type": "Task",
+      "Comment": "Send transformed data to Neptune for graph updates via SQS queue",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "QueueUrl": "{% $states.input.neptuneUpdateQueueUrl %}",
+        "MessageBody": "{% $string($states.input.neptuneUpdate) %}",
+        "MessageAttributes": {
+          "ServiceType": {
+            "StringValue": "{% $states.input.serviceType %}",
+            "DataType": "String"
+          },
+          "ScraperId": {
+            "StringValue": "{% $states.input.scraperId %}",
+            "DataType": "String"
+          },
+          "AccountId": {
+            "StringValue": "{% $states.input.accountId %}",
+            "DataType": "String"
+          },
+          "UpdateType": {
+            "StringValue": "resource_discovery",
+            "DataType": "String"
+          }
+        }
+      },
+      "Output": "{% $merge([$states.input, {'neptuneQueued': true, 'messageId': $states.result.MessageId}]) %}",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Output": "{% $merge([$states.input, {'neptuneError': $states.errorOutput, 'neptuneQueued': false}]) %}",
+          "Next": "FinalizeAmplifyScraperResults"
+        }
+      ],
+      "Next": "FinalizeAmplifyScraperResults"
+    },
+    "FinalizeAmplifyScraperResults": {
+      "Type": "Pass",
+      "Comment": "Finalize and format the complete scraper results with comprehensive metrics",
+      "QueryLanguage": "JSONata",
+      "Output": "{% {'scraperId': $states.input.scraperId, 'serviceType': $states.input.serviceType, 'accountId': $states.input.accountId, 'completedAt': $now(), 'source': 'fresh_scrape', 'summary': $states.input.summary, 'cacheStored': $states.input.cacheStored, 'neptuneQueued': $states.input.neptuneQueued, 'explorerUsed': true, 'data': $states.input.data, 'metrics': {'totalApps': $states.input.summary.totalApps, 'executionTime': ($millis() - $number($states.input.timestamp)) & 'ms', 'regionsCovered': $count($keys($states.input.summary.regionBreakdown)), 'associationsCreated': $count($states.input.data.associations)}} %}",
+      "End": true
+    }
+  }
+}
