@@ -1,4 +1,4 @@
-package parser
+package parsers
 
 import (
 	"crypto/sha256"
@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"beacon-infra/src/codeowners_scraper/types"
+	"bacon/src/code-analysis/types"
 )
 
 var entryPattern = regexp.MustCompile(`^([^\s#]+)\s+(.+)$`)

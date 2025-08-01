@@ -8,17 +8,17 @@ import (
 
 	"github.com/aws/aws-lambda-go/lambda"
 
-	"beacon-infra/src/codeowners_scraper/cache"
-	"beacon-infra/src/codeowners_scraper/github"
-	"beacon-infra/src/codeowners_scraper/parser"
-	"beacon-infra/src/codeowners_scraper/types"
-	"beacon-infra/src/common"
+	"bacon/src/code-analysis/cache"
+	"bacon/src/code-analysis/clients"
+	"bacon/src/code-analysis/parsers"
+	"bacon/src/code-analysis/types"
+	"bacon/src/shared"
 )
 
 func HandleRequest(ctx context.Context, event types.Event) (string, error) {
 	pipeline := createProcessingPipeline()
 	
-	result := common.WithTracedPipeline(ctx, "codeowners-scraper", pipeline, event)
+	result := shared.WithTracedPipeline(ctx, "codeowners-scraper", pipeline, event)
 	if result.IsFailure() {
 		return "", result.Error
 	}
@@ -27,8 +27,8 @@ func HandleRequest(ctx context.Context, event types.Event) (string, error) {
 	return string(response), nil
 }
 
-func createProcessingPipeline() *common.Pipeline[types.Event] {
-	return common.NewPipeline[types.Event]().
+func createProcessingPipeline() *shared.Pipeline[types.Event] {
+	return shared.NewPipeline[types.Event]().
 		AddStep(validateEvent).
 		AddStep(initializeContext).
 		AddStep(fetchRepositoriesStep).
@@ -63,7 +63,7 @@ func fetchRepositoriesStep(event types.Event) (types.Event, error) {
 		return event, fmt.Errorf("failed to get GitHub token: %w", err)
 	}
 
-	client := github.NewClient(token)
+	client := clients.NewClient(token)
 	repos, hasNext, nextCursor, err := client.FetchRepositories(
 		context.Background(), 
 		event.Organization, 
@@ -109,9 +109,9 @@ func processRepository(ctx context.Context, repo types.Repository) *types.RepoOw
 
 	content := extractCodeownersContent(repo)
 	if content != "" {
-		entries := parser.ParseCodeowners(content, repoKey)
+		entries := parsers.ParseCodeowners(content, repoKey)
 		ownership.Entries = entries
-		ownership.CodeownersHash = parser.CalculateHash(content)
+		ownership.CodeownersHash = parsers.CalculateHash(content)
 		ownership.CodeownersFound = true
 	}
 

@@ -1,4 +1,4 @@
-package github
+package clients
 
 import (
 	"bytes"
@@ -9,8 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"beacon-infra/src/codeowners_scraper/types"
-	"beacon-infra/src/common"
+	"bacon/src/code-analysis/types"
 )
 
 type Client struct {
