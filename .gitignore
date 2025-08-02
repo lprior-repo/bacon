@@ -30,9 +30,27 @@ vendor/
 *.test
 *.out
 go.work
+coverage.out
+coverage/
 
-# Node modules (if any)
+# Lambda binaries
+src/**/lambda/*/main
+src/**/lambda/*/bootstrap
+*.zip
+
+# Node modules and NX
 node_modules/
+.nx/cache/
+.nx/workspace-data/
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Mage
+dist/
+bin/
+build/
 
 # Python (if any)
 __pycache__/
@@ -42,6 +60,18 @@ __pycache__/
 .Python
 env/
 venv/
+
+# Security and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+
+# Build artifacts
+*.sarif
+gosec-report.sarif
 
 # Temporary files
 tmp/
