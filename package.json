@@ -17,8 +17,7 @@
   },
   "devDependencies": {
     "nx": "^21.3.10",
-    "@nx/js": "^21.3.10",
-    "@nrwl/nx-terraform": "^1.2.0"
+    "@nx/js": "^21.3.10"
   },
   "engines": {
     "node": ">=20"

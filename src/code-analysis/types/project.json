@@ -1,0 +1,29 @@
+{
+  "name": "code-analysis-types",
+  "projectType": "library",
+  "sourceRoot": "src/code-analysis/types",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go build -v ./...",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test -v -race -short ./...",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "mod-tidy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go mod tidy",
+        "cwd": "{projectRoot}"
+      }
+    }
+  },
+  "tags": ["library", "go", "code-analysis", "types"]
+}

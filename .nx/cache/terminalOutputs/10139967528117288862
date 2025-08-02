@@ -1,0 +1,9 @@
+> mage modtidy
+
+📦 Tidying Go modules...
+✅ Tidied src/shared/go.mod
+✅ Tidied src/code-analysis/cache/go.mod
+✅ Tidied src/code-analysis/parsers/go.mod
+✅ Tidied src/code-analysis/clients/go.mod
+✅ Tidied go.mod
+✅ Tidied src/code-analysis/types/go.mod

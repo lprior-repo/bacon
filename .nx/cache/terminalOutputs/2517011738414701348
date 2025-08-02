@@ -1,0 +1,25 @@
+> mage build
+
+📦 Tidying Go modules...
+🧹 Cleaning build artifacts...
+✅ Tidied go.mod
+✅ Tidied src/code-analysis/parsers/go.mod
+✅ Tidied src/code-analysis/clients/go.mod
+✅ Tidied src/code-analysis/types/go.mod
+✅ Tidied src/code-analysis/cache/go.mod
+✅ Tidied src/shared/go.mod
+go: unlinkat /home/family/.cache/go-build/44: directory not empty
+Error: failed to clean Go cache: running "go clean -cache" failed with exit code 1
+> mage build
+
+📦 Tidying Go modules...
+🧹 Cleaning build artifacts...
+✅ Tidied go.mod
+✅ Tidied src/code-analysis/parsers/go.mod
+✅ Tidied src/code-analysis/clients/go.mod
+✅ Tidied src/code-analysis/types/go.mod
+✅ Tidied src/code-analysis/cache/go.mod
+✅ Tidied src/shared/go.mod
+go: unlinkat /home/family/.cache/go-build/44: directory not empty
+Error: failed to clean Go cache: running "go clean -cache" failed with exit code 1
+Warning: command "mage build" exited with non-zero status code

@@ -1,0 +1,7 @@
+> mage build
+
+No .go files marked with the mage build tag in this directory.
+> mage build
+
+No .go files marked with the mage build tag in this directory.
+Warning: command "mage build" exited with non-zero status code

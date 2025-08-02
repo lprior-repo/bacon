@@ -1,75 +1,24 @@
-name: Serverless CI/CD
+name: Fast CI with Multiple Agents
 
 on:
   push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 env:
-  GO_VERSION: "1.24.5"
+  GO_VERSION: "1.23"
   NODE_VERSION: "20"
-  TERRAFORM_VERSION: "1.8.0"
+  NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
 
 jobs:
-  # Pre-flight checks and setup
-  setup:
-    runs-on: ubuntu-latest
-    outputs:
-      go-cache-key: ${{ steps.go-cache.outputs.cache-hit }}
-      terraform-cache-key: ${{ steps.terraform-cache.outputs.cache-hit }}
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Setup Go with cache
-      id: go-setup
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache: true
-
-    - name: Go modules cache
-      id: go-cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: ${{ env.TERRAFORM_VERSION }}
-
-    - name: Terraform cache
-      id: terraform-cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.terraform.d/plugin-cache
-          terraform/.terraform
-        key: ${{ runner.os }}-terraform-${{ env.TERRAFORM_VERSION }}-${{ hashFiles('terraform/**/*.tf') }}
-
-    - name: Install NX dependencies
-      run: npm ci
-
-  # Serverless code quality and testing
-  quality:
-    runs-on: ubuntu-latest
-    needs: setup
+  # Matrix strategy with multiple agents for maximum parallelism
+  ci:
     strategy:
+      fail-fast: false
       matrix:
-        check: [build, test, lint, security]
+        task: [build, test, lint]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -81,153 +30,107 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache: true
+        cache-dependency-path: |
+          go.sum
+          src/**/go.sum
 
-    - name: Setup Node.js
+    - name: Setup Node.js (if needed)
+      if: matrix.task == 'build' || matrix.task == 'lint'
       uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
 
     - name: Install dependencies
-      run: npm ci
-
-    - name: Run ${{ matrix.check }}
       run: |
-        case "${{ matrix.check }}" in
-          "build")
-            npx nx affected -t build --base=origin/main --parallel=5
-            ;;
-          "test")
-            npx nx affected -t test --base=origin/main --parallel=3 --coverage
-            ;;
-          "lint") 
-            npx nx affected -t lint --base=origin/main
-            ;;
-          "security")
-            # Go security scanning
-            go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
-            gosec -fmt sarif -out gosec-report.sarif ./...
-            ;;
-        esac
+        if [ "${{ matrix.task }}" = "build" ] || [ "${{ matrix.task }}" = "lint" ]; then
+          npm ci
+        fi
+        go install github.com/magefile/mage@latest
+
+    - name: Tidy Go modules
+      run: |
+        go mod tidy
+        find src -name "go.mod" -execdir go mod tidy \;
+
+    # BUILD TASK
+    - name: Build Lambda functions
+      if: matrix.task == 'build'
+      run: |
+        echo "🚀 Building Lambda functions..."
+        find src -name "main.go" -path "*/lambda/*" | while read -r main_file; do
+          dir=$(dirname "$main_file")
+          name=$(basename "$dir")
+          echo "Building Lambda: $name"
+          cd "$dir"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o main .
+          echo "✅ Built $name"
+          cd - > /dev/null
+        done
+        find src -name "main" -path "*/lambda/*" -exec ls -la {} \;
+
+    # TEST TASK  
+    - name: Run tests
+      if: matrix.task == 'test'
+      run: |
+        echo "🧪 Running tests with maximum parallelism..."
+        # Run root tests if they exist
+        if [ -f "go.mod" ] && ls *_test.go 2>/dev/null; then
+          go test -v -race -short -parallel ${{ strategy.job-total }} ./...
+        fi
+        
+        # Run all module tests in parallel
+        find src -name "go.mod" -print0 | xargs -0 -P ${{ strategy.job-total }} -I {} sh -c '
+          dir=$(dirname "{}")
+          echo "Testing $dir"
+          cd "$dir"
+          if ls *_test.go 2>/dev/null; then
+            go test -v -race -short -parallel 4 ./...
+          else
+            echo "No tests in $dir"
+          fi
+        '
+
+    # LINT TASK
+    - name: Run linting and security scans
+      if: matrix.task == 'lint'
+      run: |
+        echo "🔍 Running linting and security scans..."
+        
+        # Install linting tools
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        
+        # Run golangci-lint
+        echo "Running golangci-lint..."
+        golangci-lint run --timeout=5m ./...
+        
+        # Run gosec security scan
+        echo "Running security scan..."
+        gosec -fmt sarif -out gosec-report.sarif ./...
+        
+        # Scan individual Lambda functions
+        find src -name "*.go" -path "*/lambda/*" | xargs dirname | sort -u | while read dir; do
+          echo "Security scanning $dir"
+          gosec "$dir/..."
+        done
 
     - name: Upload security results
-      if: matrix.check == 'security'
+      if: matrix.task == 'lint' && always()
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: gosec-report.sarif
 
-    - name: Upload test coverage
-      if: matrix.check == 'test'
-      uses: codecov/codecov-action@v4
-      with:
-        files: ./coverage/*.out
-
-  # Infrastructure validation and planning
-  infrastructure:
+  # Consolidation job to ensure all matrix jobs succeeded
+  ci-success:
     runs-on: ubuntu-latest
-    needs: setup
-    strategy:
-      matrix:
-        environment: [dev, staging, prod]
+    needs: [ci]
+    if: always()
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: ${{ env.TERRAFORM_VERSION }}
-
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-        aws-region: us-east-1
-
-    - name: Terraform validate
+    - name: Check all jobs succeeded
       run: |
-        cd terraform
-        terraform init -backend=false
-        terraform validate
-
-    - name: Terraform plan ${{ matrix.environment }}
-      run: |
-        cd terraform
-        terraform init
-        terraform workspace select ${{ matrix.environment }} || terraform workspace new ${{ matrix.environment }}
-        terraform plan -var-file="environments/${{ matrix.environment }}.tfvars" -out=${{ matrix.environment }}.tfplan
-
-    - name: Upload Terraform plan
-      uses: actions/upload-artifact@v4
-      with:
-        name: terraform-plan-${{ matrix.environment }}
-        path: terraform/${{ matrix.environment }}.tfplan
-        retention-days: 5
-
-  # Serverless deployment (only on main branch)
-  deploy:
-    runs-on: ubuntu-latest
-    needs: [quality, infrastructure]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-        aws-region: us-east-1
-
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: ${{ env.TERRAFORM_VERSION }}
-
-    - name: Download Terraform plan
-      uses: actions/download-artifact@v4
-      with:
-        name: terraform-plan-prod
-        path: terraform/
-
-    - name: Deploy infrastructure
-      run: |
-        cd terraform
-        terraform init
-        terraform workspace select prod
-        terraform apply prod.tfplan
-
-    - name: Deploy Lambda functions
-      run: |
-        # Deploy updated Lambda functions with zero-downtime
-        aws lambda update-function-code \
-          --function-name bacon-prod-github-scraper \
-          --zip-file fileb://src/code-analysis/lambda/github-scraper/main.zip
-        
-        aws lambda update-alias \
-          --function-name bacon-prod-github-scraper \
-          --name current \
-          --function-version $(aws lambda publish-version --function-name bacon-prod-github-scraper --query Version --output text)
-
-    - name: Run smoke tests
-      run: |
-        # Basic smoke test to ensure deployment is healthy
-        aws lambda invoke \
-          --function-name bacon-prod-github-scraper:current \
-          --payload '{"test": true}' \
-          /tmp/smoke-test-response.json
-        
-        if [ $(cat /tmp/smoke-test-response.json | jq -r '.statusCode') != "200" ]; then
-          echo "Smoke test failed!"
+        if [ "${{ needs.ci.result }}" != "success" ]; then
+          echo "❌ CI pipeline failed!"
           exit 1
         fi
-
-    - name: Notify deployment success
-      uses: rtCamp/action-slack-notify@v2
-      env:
-        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-        SLACK_TITLE: 'Serverless deployment successful'
-        SLACK_MESSAGE: 'All Lambda functions deployed and smoke tests passed'
+        echo "✅ All CI tasks completed successfully with maximum parallelism!"

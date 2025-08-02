@@ -10,11 +10,9 @@ import (
     "time"
 
     "github.com/aws/aws-lambda-go/lambda"
-    "github.com/aws/aws-sdk-go-v2/aws"
     "github.com/aws/aws-sdk-go-v2/config"
     "github.com/aws/aws-sdk-go-v2/service/dynamodb"
     "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-    "github.com/aws/aws-xray-sdk-go/v2/xray"
 )
 
 type DatadogEvent struct {
@@ -102,14 +100,13 @@ func decodeDatadogResponse(resp *http.Response) (*DatadogMetric, error) {
 }
 
 func fetchDatadogMetrics(ctx context.Context, metricName, timeRange string) (*DatadogMetric, error) {
-    return withTracedSubsegment(ctx, "fetch-datadog-metrics", func(tracedCtx context.Context, seg *xray.Segment) (*DatadogMetric, error) {
+    return withTracedOperation(ctx, "fetch-datadog-metrics", func(tracedCtx context.Context) (*DatadogMetric, error) {
         apiKey, appKey, err := getDatadogCredentials()
         if err != nil {
             return nil, err
         }
         
         url := buildDatadogURL(metricName, timeRange)
-        seg.AddAnnotation("datadog_url", url)
         
         req, err := createDatadogRequest(tracedCtx, url, apiKey, appKey)
         if err != nil {
@@ -121,8 +118,6 @@ func fetchDatadogMetrics(ctx context.Context, metricName, timeRange string) (*Da
         if err != nil {
             return nil, fmt.Errorf("failed to fetch metrics: %w", err)
         }
-        
-        seg.AddAnnotation("response_status", resp.StatusCode)
         
         return decodeDatadogResponse(resp)
     })
@@ -147,22 +142,21 @@ func getMetricsTableName() string {
 }
 
 func storeMetricsData(ctx context.Context, metric *DatadogMetric) error {
-    return withTracedSubsegment(ctx, "store-metrics-data", func(tracedCtx context.Context, seg *xray.Segment) error {
+    err, _ := withTracedOperation(ctx, "store-metrics-data", func(tracedCtx context.Context) (error, error) {
         cfg, err := config.LoadDefaultConfig(tracedCtx)
         if err != nil {
-            return fmt.Errorf("failed to load AWS config: %w", err)
+            return fmt.Errorf("failed to load AWS config: %w", err), err
         }
         
         client := dynamodb.NewFromConfig(cfg)
         tableName := getMetricsTableName()
         
-        seg.AddAnnotation("table_name", tableName)
-        seg.AddAnnotation("point_count", len(metric.Points))
-        
         // Functional approach: map points to storage operations
         storeOperations := mapPointsToStoreOperations(metric.Points, metric.MetricName)
-        return executeStoreOperations(tracedCtx, client, tableName, storeOperations)
+        err = executeStoreOperations(tracedCtx, client, tableName, storeOperations)
+        return err, err
     })
+    return err
 }
 
 func createSuccessResponse(message string) DatadogResponse {

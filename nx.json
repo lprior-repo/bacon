@@ -9,9 +9,9 @@
       "inputs": [
         "production",
         "^production",
-        {
-          "externalDependencies": ["go"]
-        }
+        "{projectRoot}/**/*.go",
+        "{projectRoot}/go.mod",
+        "{projectRoot}/go.sum"
       ],
       "outputs": [
         "{projectRoot}/main",
@@ -23,10 +23,7 @@
       "cache": true,
       "inputs": [
         "default",
-        "^production",
-        {
-          "externalDependencies": ["go"]
-        }
+        "^production"
       ],
       "outputs": [
         "{projectRoot}/coverage"
@@ -83,19 +80,25 @@
       "{workspaceRoot}/magefile.go"
     ]
   },
-  "plugins": [
-    {
-      "plugin": "@nrwl/nx-terraform",
-      "options": {
-        "planTargetName": "terraform-plan",
-        "applyTargetName": "terraform-apply",
-        "destroyTargetName": "terraform-destroy",
-        "validateTargetName": "terraform-validate"
-      }
-    }
-  ],
+  "plugins": [],
   "cli": {
     "analytics": false
   },
-  "defaultBase": "main"
+  "defaultBase": "main",
+  "parallel": 10,
+  "cacheDirectory": ".nx/cache",
+  "useDaemonProcess": true,
+  "tasksRunnerOptions": {
+    "default": {
+      "runner": "nx/tasks-runners/default",
+      "options": {
+        "cacheableOperations": ["build", "test", "lint", "mod-tidy"],
+        "parallel": true,
+        "maxParallel": 10,
+        "captureStderr": true,
+        "skipNxCache": false,
+        "runtimeCacheInputs": ["node -v", "go version"]
+      }
+    }
+  }
 }

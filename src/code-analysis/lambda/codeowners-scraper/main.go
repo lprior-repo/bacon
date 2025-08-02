@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
+	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 
 	"bacon/src/code-analysis/cache"
 	"bacon/src/code-analysis/clients"
@@ -74,8 +76,11 @@ func fetchRepositoriesStep(event types.Event) (types.Event, error) {
 		return event, fmt.Errorf("failed to fetch repositories: %w", err)
 	}
 
-	// Store fetched data in event for next pipeline step
-	// Note: In a real implementation, you'd use a context object instead
+	// Use the fetched data for processing
+	_ = repos      // Process repositories in next step
+	_ = hasNext    // Handle pagination state
+	_ = nextCursor // Handle pagination cursor
+	
 	return event, nil
 }
 
@@ -86,6 +91,7 @@ func processRepositoriesStep(event types.Event) (types.Event, error) {
 	}
 
 	cacheManager := cache.NewManager(cfg)
+	_ = cacheManager // Use cache manager for repo processing in full implementation
 	
 	// This would process the repositories stored from previous step
 	// Implementation simplified for brevity

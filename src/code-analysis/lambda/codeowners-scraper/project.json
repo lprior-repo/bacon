@@ -1,0 +1,30 @@
+{
+  "name": "codeowners-scraper",
+  "projectType": "application",
+  "sourceRoot": "src/code-analysis/lambda/codeowners-scraper",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o main .",
+        "cwd": "{projectRoot}"
+      },
+      "outputs": ["{projectRoot}/main"]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test -v -race -short ./...",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "mod-tidy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go mod tidy",
+        "cwd": "{projectRoot}"
+      }
+    }
+  },
+  "tags": ["lambda", "codeowners", "scraper", "go"]
+}

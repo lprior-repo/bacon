@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
@@ -16,9 +17,9 @@ import (
 
 var Default = Build
 
-// Build compiles all Lambda functions in parallel for maximum speed
+// Build compiles all Lambda functions with optimized parallelism and caching
 func Build() error {
-	mg.Deps(Clean)
+	mg.Deps(Clean, ModTidy) // Ensure dependencies are ready
 
 	lambdaFunctions, err := findLambdaFunctions()
 	if err != nil {
@@ -30,34 +31,44 @@ func Build() error {
 		return nil
 	}
 
-	fmt.Printf("Building %d Lambda functions in parallel...\n", len(lambdaFunctions))
+	fmt.Printf("Building %d Lambda functions with optimized parallelism...\n", len(lambdaFunctions))
 
-	// Use all available CPU cores for parallel builds
-	maxConcurrency := runtime.NumCPU()
-	semaphore := make(chan struct{}, maxConcurrency)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var errors []error
-
-	for _, function := range lambdaFunctions {
-		wg.Add(1)
-		go func(fn LambdaFunction) {
-			defer wg.Done()
-			semaphore <- struct{}{} // Acquire semaphore
-			defer func() { <-semaphore }() // Release semaphore
-
-			if err := buildLambdaFunction(fn); err != nil {
-				mu.Lock()
-				errors = append(errors, fmt.Errorf("failed to build %s: %w", fn.Name, err))
-				mu.Unlock()
-			} else {
-				fmt.Printf("✅ Built %s\n", fn.Name)
-			}
-		}(function)
+	// Optimize concurrency based on system resources and I/O constraints
+	maxConcurrency := min(runtime.NumCPU()*2, len(lambdaFunctions)) // Allow more concurrency for I/O bound operations
+	
+	// Pre-warm build cache by downloading dependencies
+	if err := prewarmBuildCache(); err != nil {
+		fmt.Printf("Warning: failed to prewarm build cache: %v\n", err)
 	}
 
-	wg.Wait()
+	// Build with work-stealing pool for better load balancing
+	return buildWithWorkStealing(lambdaFunctions, maxConcurrency)
+}
 
+// buildWithWorkStealing implements a work-stealing pool for optimal resource utilization
+func buildWithWorkStealing(functions []LambdaFunction, maxWorkers int) error {
+	workQueue := make(chan LambdaFunction, len(functions))
+	results := make(chan error, len(functions))
+	
+	// Start workers
+	for i := 0; i < maxWorkers; i++ {
+		go buildWorker(i, workQueue, results)
+	}
+	
+	// Queue all work
+	for _, fn := range functions {
+		workQueue <- fn
+	}
+	close(workQueue)
+	
+	// Collect results
+	var errors []error
+	for i := 0; i < len(functions); i++ {
+		if err := <-results; err != nil {
+			errors = append(errors, err)
+		}
+	}
+	
 	if len(errors) > 0 {
 		fmt.Printf("❌ %d builds failed:\n", len(errors))
 		for _, err := range errors {
@@ -65,9 +76,69 @@ func Build() error {
 		}
 		return fmt.Errorf("build failed with %d errors", len(errors))
 	}
-
-	fmt.Printf("🎉 Successfully built all %d Lambda functions\n", len(lambdaFunctions))
+	
+	fmt.Printf("🎉 Successfully built all %d Lambda functions\n", len(functions))
 	return nil
+}
+
+// buildWorker processes Lambda builds from the work queue
+func buildWorker(id int, workQueue <-chan LambdaFunction, results chan<- error) {
+	for fn := range workQueue {
+		start := time.Now()
+		err := buildLambdaFunction(fn)
+		duration := time.Since(start)
+		
+		if err != nil {
+			fmt.Printf("❌ Worker %d: Failed to build %s (%v)\n", id, fn.Name, duration)
+			results <- fmt.Errorf("failed to build %s: %w", fn.Name, err)
+		} else {
+			fmt.Printf("✅ Worker %d: Built %s (%v)\n", id, fn.Name, duration)
+			results <- nil
+		}
+	}
+}
+
+// prewarmBuildCache downloads all dependencies to warm the build cache
+func prewarmBuildCache() error {
+	fmt.Println("🔥 Prewarming build cache...")
+	
+	modules, err := findGoModules()
+	if err != nil {
+		return err
+	}
+	
+	// Download dependencies in parallel
+	var wg sync.WaitGroup
+	maxConcurrency := runtime.NumCPU()
+	semaphore := make(chan struct{}, maxConcurrency)
+	
+	for _, module := range modules {
+		wg.Add(1)
+		go func(modPath string) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			
+			dir := filepath.Dir(modPath)
+			oldDir, _ := os.Getwd()
+			os.Chdir(dir)
+			defer os.Chdir(oldDir)
+			
+			// Download and verify dependencies
+			sh.Run("go", "mod", "download", "-x") // -x for verbose output
+		}(module)
+	}
+	
+	wg.Wait()
+	return nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // Clean removes all build artifacts
@@ -258,6 +329,11 @@ func findLambdaFunctions() ([]LambdaFunction, error) {
 			return err
 		}
 
+		// Skip node_modules and other non-Go directories
+		if info.IsDir() && (info.Name() == "node_modules" || info.Name() == ".nx" || info.Name() == ".git") {
+			return filepath.SkipDir
+		}
+
 		// Look for main.go files in lambda directories
 		if info.Name() == "main.go" && strings.Contains(path, "/lambda/") {
 			dir := filepath.Dir(path)
@@ -293,16 +369,25 @@ func findGoModules() ([]string, error) {
 	return modules, err
 }
 
-// buildLambdaFunction builds a single Lambda function
+// buildLambdaFunction builds a single Lambda function with aggressive optimizations
 func buildLambdaFunction(fn LambdaFunction) error {
 	env := map[string]string{
 		"GOOS":         "linux",
-		"GOARCH":       "amd64",
+		"GOARCH":       "amd64", // Consider arm64 for 20% cost savings
 		"CGO_ENABLED":  "0",
 		"GO111MODULE":  "on",
 	}
 
-	// Build the Lambda function
+	// Build with aggressive optimizations and build cache
 	outputPath := filepath.Join(fn.Path, "main")
-	return sh.RunWith(env, "go", "build", "-ldflags", "-s -w", "-o", outputPath, "./"+fn.Path)
+	args := []string{
+		"build",
+		"-ldflags", "-s -w -buildid=", // Remove debug info and build ID for smaller binaries
+		"-trimpath",                   // Remove absolute paths for reproducible builds
+		"-buildvcs=false",            // Disable VCS info for faster builds
+		"-o", outputPath,
+		"./" + fn.Path,
+	}
+	
+	return sh.RunWith(env, "go", args...)
 }

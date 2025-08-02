@@ -1,0 +1,30 @@
+{
+  "name": "code-analysis-clients",
+  "projectType": "library",
+  "sourceRoot": "src/code-analysis/clients",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go build -v ./...",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test -v -race -short ./...",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "mod-tidy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go mod tidy",
+        "cwd": "{projectRoot}"
+      }
+    }
+  },
+  "implicitDependencies": ["code-analysis-types"],
+  "tags": ["library", "go", "code-analysis", "clients"]
+}

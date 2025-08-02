@@ -3,8 +3,6 @@ package main
 import (
     "context"
     "fmt"
-
-    "github.com/aws/aws-xray-sdk-go/v2/xray"
     
     common "bacon/src/shared"
 )

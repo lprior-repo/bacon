@@ -26,10 +26,7 @@ func (r DatadogProcessingResult) IsFailure() bool {
 
 // Functional composition for Datadog event processing
 func processDatadogEvent(ctx context.Context, event DatadogEvent) DatadogProcessingResult {
-    return withTracedSubsegment(ctx, "process-datadog-event", func(tracedCtx context.Context, seg *xray.Segment) (DatadogProcessingResult, error) {
-        seg.AddAnnotation("metric_name", event.MetricName)
-        seg.AddAnnotation("time_range", event.TimeRange)
-        
+    result, err := withTracedOperation(ctx, "process-datadog-event", func(tracedCtx context.Context) (DatadogProcessingResult, error) {
         // Fetch metrics using functional approach
         metric, err := fetchDatadogMetrics(tracedCtx, event.MetricName, event.TimeRange)
         if err != nil {
@@ -42,14 +39,14 @@ func processDatadogEvent(ctx context.Context, event DatadogEvent) DatadogProcess
             return DatadogProcessingResult{Error: fmt.Errorf("failed to store metrics: %w", err)}, err
         }
         
-        // Add metadata
-        seg.AddMetadata("metrics_data", map[string]interface{}{
-            "point_count": len(metric.Points),
-            "metric_name": metric.MetricName,
-        })
-        
         return DatadogProcessingResult{Metric: metric}, nil
     })
+    
+    if err != nil {
+        return DatadogProcessingResult{Error: err}
+    }
+    
+    return result
 }
 
 // Higher-order function for tracing operations
@@ -65,16 +62,18 @@ func withTracedOperation[T any](ctx context.Context, operationName string, opera
     return result, err
 }
 
-func withTracedSubsegment[T any](ctx context.Context, segmentName string, operation func(context.Context, *xray.Segment) (T, error)) (T, error) {
+func withTracedSubsegment[T any](ctx context.Context, segmentName string, operation func(context.Context, *xray.Segment) (T, error)) T {
     ctx, seg := xray.BeginSubsegment(ctx, segmentName)
     defer seg.Close(nil)
     
     result, err := operation(ctx, seg)
     if err != nil {
         seg.AddError(err)
+        var zero T
+        return zero
     }
     
-    return result, err
+    return result
 }
 
 // Pure functional operations for metric storage
