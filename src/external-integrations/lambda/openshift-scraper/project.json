@@ -18,6 +18,17 @@
         "cwd": "{projectRoot}"
       }
     },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "go vet ./...",
+          "gofmt -l ."
+        ],
+        "parallel": true,
+        "cwd": "{projectRoot}"
+      }
+    },
     "mod-tidy": {
       "executor": "nx:run-commands",
       "options": {

@@ -13,14 +13,35 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "mage test",
+        "command": "mage testunit",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "build-all": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "nx run-many -t build --parallel=10",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test-all": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "nx run-many -t test --parallel=10",
         "cwd": "{projectRoot}"
       }
     },
     "test-unit": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "mage testunit",
+        "command": "go test -v -race -short ./...",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test-local": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "mage test",
         "cwd": "{projectRoot}"
       }
     },
@@ -31,10 +52,33 @@
         "cwd": "{projectRoot}"
       }
     },
+    "lint-all": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "nx run-many -t lint --parallel=5",
+          "go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest",
+          "gosec -fmt sarif -out gosec-report.sarif ./..."
+        ],
+        "parallel": false,
+        "cwd": "{projectRoot}"
+      }
+    },
     "mod-tidy": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "mage modtidy",
+        "command": "go mod tidy",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "mod-tidy-all": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "go mod tidy",
+          "nx run-many -t mod-tidy --parallel=10"
+        ],
+        "parallel": false,
         "cwd": "{projectRoot}"
       }
     },
@@ -48,10 +92,16 @@
     "ci": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "mage ci",
+        "commands": [
+          "nx run bacon:mod-tidy-all",
+          "nx run bacon:test-all",
+          "nx run bacon:lint-all",
+          "nx run bacon:build-all"
+        ],
+        "parallel": false,
         "cwd": "{projectRoot}"
       }
     }
   },
-  "tags": ["go", "serverless", "aws", "lambda"]
+  "tags": ["go", "serverless", "aws", "lambda", "nx-orchestrated"]
 }

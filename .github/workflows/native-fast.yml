@@ -54,66 +54,25 @@ jobs:
         find src -name "go.mod" -execdir go mod tidy \;
 
     # BUILD TASK
-    - name: Build Lambda functions
+    - name: Build all projects with NX
       if: matrix.task == 'build'
       run: |
-        echo "🚀 Building Lambda functions..."
-        find src -name "main.go" -path "*/lambda/*" | while read -r main_file; do
-          dir=$(dirname "$main_file")
-          name=$(basename "$dir")
-          echo "Building Lambda: $name"
-          cd "$dir"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o main .
-          echo "✅ Built $name"
-          cd - > /dev/null
-        done
-        find src -name "main" -path "*/lambda/*" -exec ls -la {} \;
+        echo "🚀 Building all projects with NX orchestration..."
+        nx run bacon:build-all
 
     # TEST TASK  
-    - name: Run tests
+    - name: Run all tests with NX
       if: matrix.task == 'test'
       run: |
-        echo "🧪 Running tests with maximum parallelism..."
-        # Run root tests if they exist
-        if [ -f "go.mod" ] && ls *_test.go 2>/dev/null; then
-          go test -v -race -short -parallel ${{ strategy.job-total }} ./...
-        fi
-        
-        # Run all module tests in parallel
-        find src -name "go.mod" -print0 | xargs -0 -P ${{ strategy.job-total }} -I {} sh -c '
-          dir=$(dirname "{}")
-          echo "Testing $dir"
-          cd "$dir"
-          if ls *_test.go 2>/dev/null; then
-            go test -v -race -short -parallel 4 ./...
-          else
-            echo "No tests in $dir"
-          fi
-        '
+        echo "🧪 Running all tests with NX orchestration..."
+        nx run bacon:test-all
 
     # LINT TASK
-    - name: Run linting and security scans
+    - name: Run all linting with NX
       if: matrix.task == 'lint'
       run: |
-        echo "🔍 Running linting and security scans..."
-        
-        # Install linting tools
-        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
-        
-        # Run golangci-lint
-        echo "Running golangci-lint..."
-        golangci-lint run --timeout=5m ./...
-        
-        # Run gosec security scan
-        echo "Running security scan..."
-        gosec -fmt sarif -out gosec-report.sarif ./...
-        
-        # Scan individual Lambda functions
-        find src -name "*.go" -path "*/lambda/*" | xargs dirname | sort -u | while read dir; do
-          echo "Security scanning $dir"
-          gosec "$dir/..."
-        done
+        echo "🔍 Running all linting with NX orchestration..."
+        nx run bacon:lint-all
 
     - name: Upload security results
       if: matrix.task == 'lint' && always()
