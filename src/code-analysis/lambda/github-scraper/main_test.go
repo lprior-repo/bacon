@@ -53,13 +53,26 @@ func TestCreateErrorResponse(t *testing.T) {
 }
 
 func TestFetchGitHubRepository_InvalidURL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	
 	ctx := context.Background()
 	
 	// Test with empty parameters that would create invalid URL
-	_, err := fetchGitHubRepository(ctx, "", "")
-	if err == nil {
-		t.Error("fetchGitHubRepository() should return error for empty owner/repo")
+	data := GitHubProcessingData{
+		Context: ctx,
+		Event: GitHubEvent{
+			Repository: "",
+			Owner:      "",
+		},
 	}
+	
+	result, err := fetchRepositoryStep(data)
+	if err == nil {
+		t.Error("fetchRepositoryStep() should return error for empty owner/repo")
+	}
+	_ = result
 }
 
 func TestHandleGitHubScrapeRequest_ValidInput(t *testing.T) {

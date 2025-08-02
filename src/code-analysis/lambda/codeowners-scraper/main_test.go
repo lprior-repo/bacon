@@ -77,16 +77,12 @@ func TestInitializeContext(t *testing.T) {
 		t.Fatalf("initializeContext() error = %v", err)
 	}
 
-	if result.Context == nil {
-		t.Error("initializeContext() should set Context")
+	if result.Organization != input.Organization {
+		t.Errorf("initializeContext() Organization = %v, want %v", result.Organization, input.Organization)
 	}
 
-	if result.Context.StartTime.IsZero() {
-		t.Error("initializeContext() should set StartTime")
-	}
-
-	if result.Context.RequestID == "" {
-		t.Error("initializeContext() should set RequestID")
+	if result.BatchSize != input.BatchSize {
+		t.Errorf("initializeContext() BatchSize = %v, want %v", result.BatchSize, input.BatchSize)
 	}
 }
 
