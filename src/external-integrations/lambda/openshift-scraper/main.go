@@ -1,3 +1,4 @@
+// Package main implements an AWS Lambda function that scrapes OpenShift/Kubernetes metadata for ownership analysis.
 package main
 
 import (
@@ -146,9 +147,9 @@ func scrapeOpenShiftMetadata(ctx context.Context, cluster, namespace string) (*O
 		Confidence: 0.9, // Very high confidence for infrastructure-level ownership
 	}
 
-	seg.AddAnnotation("resources_found", len(resources))
-	seg.AddMetadata("cluster", cluster)
-	seg.AddMetadata("namespace", namespace)
+	_ = seg.AddAnnotation("resources_found", len(resources))
+	_ = seg.AddMetadata("cluster", cluster)
+	_ = seg.AddMetadata("namespace", namespace)
 
 	return ownershipData, nil
 }

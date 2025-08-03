@@ -1,3 +1,5 @@
+// Package main implements an AWS Lambda function for processing relationship data from multiple scrapers,
+// applying confidence scoring, detecting conflicts, and storing the results in Amazon Neptune.
 package main
 
 import (
@@ -60,7 +62,7 @@ func handleProcessorRequest(ctx context.Context, event ProcessorEvent) (Processo
     ctx, seg := xray.BeginSubsegment(ctx, "processor-handler")
     defer seg.Close(nil)
 
-    seg.AddAnnotation("scraper_count", len(event.ScraperOutputs))
+    _ = seg.AddAnnotation("scraper_count", len(event.ScraperOutputs))
 
     // Initialize confidence engine and conflict detector
     confEngine := initConfidenceEngine()
@@ -78,13 +80,13 @@ func handleProcessorRequest(ctx context.Context, event ProcessorEvent) (Processo
     // Store in Neptune
     err := storeInNeptune(ctx, resolvedRelationships)
     if err != nil {
-        seg.AddError(err)
+        _ = seg.AddError(err)
         return createErrorResponse(fmt.Sprintf("failed to store in Neptune: %v", err), 0, 0), err
     }
 
     conflictCount := countConflicts(resolvedRelationships)
     
-    seg.AddMetadata("processing_result", map[string]interface{}{
+    _ = seg.AddMetadata("processing_result", map[string]interface{}{
         "relationship_count": len(resolvedRelationships),
         "conflict_count":     conflictCount,
         "scraper_sources":    getSourceNames(event.ScraperOutputs),
@@ -138,7 +140,7 @@ func extractRelationships(ctx context.Context, outputs []ScraperOutput) []Relati
         }
     }
 
-    seg.AddAnnotation("relationship_count", len(relationships))
+    _ = seg.AddAnnotation("relationship_count", len(relationships))
     return relationships
 }
 
@@ -250,7 +252,7 @@ func applyConfidenceScoring(ctx context.Context, relationships []Relationship, e
         }
     }
 
-    seg.AddAnnotation("scored_relationships", len(scoredRelationships))
+    _ = seg.AddAnnotation("scored_relationships", len(scoredRelationships))
     return scoredRelationships
 }
 
@@ -342,7 +344,7 @@ func detectAndResolveConflicts(ctx context.Context, relationships []Relationship
         }
     }
 
-    seg.AddAnnotation("conflict_count", conflictCount)
+    _ = seg.AddAnnotation("conflict_count", conflictCount)
     return resolvedRelationships
 }
 
@@ -400,7 +402,7 @@ func storeInNeptune(ctx context.Context, relationships []Relationship) error {
         log.Printf("Would execute Gremlin query: %s", gremlinQuery)
     }
 
-    seg.AddAnnotation("relationships_stored", len(relationships))
+    _ = seg.AddAnnotation("relationships_stored", len(relationships))
     return nil
 }
 

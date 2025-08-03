@@ -1,3 +1,4 @@
+// Package main provides AWS Lambda handler for GraphQL mutation operations.
 package main
 
 import (
@@ -38,8 +39,8 @@ type Relationship struct {
 }
 
 type CreateRelationshipInput struct {
-	FromUserId   string                 `json:"fromUserId"`
-	ToResourceId string                 `json:"toResourceId"`
+	FromUserID   string                 `json:"fromUserId"`
+	ToResourceID string                 `json:"toResourceId"`
 	Type         string                 `json:"type"`
 	Confidence   *float64               `json:"confidence"`
 	Source       *string                `json:"source"`
@@ -51,7 +52,7 @@ func HandleRequest(ctx context.Context, event AppSyncEvent) (interface{}, error)
 	defer seg.Close(nil)
 
 	log.Printf("Handling AppSync mutation: %s", event.Info.FieldName)
-	seg.AddAnnotation("field_name", event.Info.FieldName)
+	_ = seg.AddAnnotation("field_name", event.Info.FieldName)
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -82,8 +83,8 @@ func handleCreateRelationship(ctx context.Context, args map[string]interface{}) 
 	inputRaw := args["input"].(map[string]interface{})
 	
 	// Parse input
-	fromUserId := inputRaw["fromUserId"].(string)
-	toResourceId := inputRaw["toResourceId"].(string)
+	fromUserID := inputRaw["fromUserId"].(string)
+	toResourceID := inputRaw["toResourceId"].(string)
 	relType := inputRaw["type"].(string)
 	
 	confidence := 0.5 // Default confidence
@@ -96,16 +97,16 @@ func handleCreateRelationship(ctx context.Context, args map[string]interface{}) 
 		source = inputRaw["source"].(string)
 	}
 
-	seg.AddAnnotation("from_user_id", fromUserId)
-	seg.AddAnnotation("to_resource_id", toResourceId)
-	seg.AddAnnotation("relationship_type", relType)
+	_ = seg.AddAnnotation("from_user_id", fromUserID)
+	_ = seg.AddAnnotation("to_resource_id", toResourceID)
+	_ = seg.AddAnnotation("relationship_type", relType)
 
 	// Mock relationship creation - in production would create in Neptune
 	now := time.Now().Format(time.RFC3339)
 	relationship := &Relationship{
 		ID:              fmt.Sprintf("rel-%d", time.Now().Unix()),
-		From:            fromUserId,
-		To:              toResourceId,
+		From:            fromUserID,
+		To:              toResourceID,
 		Type:            relType,
 		Confidence:      confidence,
 		ConfidenceLevel: calculateConfidenceLevel(confidence),
@@ -117,7 +118,7 @@ func handleCreateRelationship(ctx context.Context, args map[string]interface{}) 
 	}
 
 	log.Printf("Created relationship: %s -> %s (%s) with confidence %f", 
-		fromUserId, toResourceId, relType, confidence)
+		fromUserID, toResourceID, relType, confidence)
 
 	return relationship, nil
 }
@@ -126,16 +127,16 @@ func handleUpdateRelationshipConfidence(ctx context.Context, args map[string]int
 	_, seg := xray.BeginSubsegment(ctx, "update-relationship-confidence")
 	defer seg.Close(nil)
 
-	relationshipId := args["id"].(string)
+	relationshipID := args["id"].(string)
 	newConfidence := args["confidence"].(float64)
 
-	seg.AddAnnotation("relationship_id", relationshipId)
-	seg.AddAnnotation("new_confidence", newConfidence)
+	_ = seg.AddAnnotation("relationship_id", relationshipID)
+	_ = seg.AddAnnotation("new_confidence", newConfidence)
 
 	// Mock confidence update - in production would update Neptune
 	now := time.Now().Format(time.RFC3339)
 	relationship := &Relationship{
-		ID:              relationshipId,
+		ID:              relationshipID,
 		From:            "updated-user",
 		To:              "updated-resource",
 		Type:            "OWNS",
@@ -148,7 +149,7 @@ func handleUpdateRelationshipConfidence(ctx context.Context, args map[string]int
 		UpdatedAt:       now,
 	}
 
-	log.Printf("Updated relationship %s confidence to %f", relationshipId, newConfidence)
+	log.Printf("Updated relationship %s confidence to %f", relationshipID, newConfidence)
 
 	return relationship, nil
 }
@@ -157,16 +158,16 @@ func handleResolveConflict(ctx context.Context, args map[string]interface{}) (*R
 	_, seg := xray.BeginSubsegment(ctx, "resolve-conflict")
 	defer seg.Close(nil)
 
-	conflictId := args["id"].(string)
-	winnerId := args["winnerId"].(string)
+	conflictID := args["id"].(string)
+	winnerID := args["winnerId"].(string)
 
-	seg.AddAnnotation("conflict_id", conflictId)
-	seg.AddAnnotation("winner_id", winnerId)
+	_ = seg.AddAnnotation("conflict_id", conflictID)
+	_ = seg.AddAnnotation("winner_id", winnerID)
 
 	// Mock conflict resolution - in production would update Neptune
 	now := time.Now().Format(time.RFC3339)
 	relationship := &Relationship{
-		ID:              winnerId,
+		ID:              winnerID,
 		From:            "resolved-user",
 		To:              "disputed-resource",
 		Type:            "OWNS",
@@ -179,7 +180,7 @@ func handleResolveConflict(ctx context.Context, args map[string]interface{}) (*R
 		UpdatedAt:       now,
 	}
 
-	log.Printf("Resolved conflict %s, winner: %s", conflictId, winnerId)
+	log.Printf("Resolved conflict %s, winner: %s", conflictID, winnerID)
 
 	return relationship, nil
 }
@@ -194,7 +195,7 @@ func handleApproveRelationships(ctx context.Context, args map[string]interface{}
 		ids = append(ids, id.(string))
 	}
 
-	seg.AddAnnotation("relationship_count", len(ids))
+	_ = seg.AddAnnotation("relationship_count", len(ids))
 
 	// Mock bulk approval - in production would update Neptune
 	var relationships []Relationship
@@ -232,7 +233,7 @@ func handleRejectRelationships(ctx context.Context, args map[string]interface{})
 		ids = append(ids, id.(string))
 	}
 
-	seg.AddAnnotation("relationship_count", len(ids))
+	_ = seg.AddAnnotation("relationship_count", len(ids))
 
 	// Mock bulk rejection - in production would delete from Neptune
 	log.Printf("Rejected %d relationships: %v", len(ids), ids)

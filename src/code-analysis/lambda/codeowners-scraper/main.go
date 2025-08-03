@@ -1,3 +1,4 @@
+// Package main implements a Lambda function that scrapes CODEOWNERS data from GitHub repositories.
 package main
 
 import (
@@ -12,7 +13,6 @@ import (
 
 	"bacon/src/code-analysis/cache"
 	"bacon/src/code-analysis/clients"
-	"bacon/src/code-analysis/parsers"
 	"bacon/src/code-analysis/types"
 	common "bacon/src/shared"
 )
@@ -104,45 +104,6 @@ func buildOwnershipDataStep(event types.Event) (types.Event, error) {
 	return event, nil
 }
 
-func processRepository(ctx context.Context, repo types.Repository) *types.RepoOwnership {
-	repoKey := fmt.Sprintf("%s/%s", repo.Owner.Login, repo.Name)
-	
-	ownership := &types.RepoOwnership{
-		Repository:      repoKey,
-		CodeownersFound: false,
-		LastModified:    repo.PushedAt,
-	}
-
-	content := extractCodeownersContent(repo)
-	if content != "" {
-		entries := parsers.ParseCodeowners(content, repoKey)
-		ownership.Entries = entries
-		ownership.CodeownersHash = parsers.CalculateHash(content)
-		ownership.CodeownersFound = true
-	}
-
-	return ownership
-}
-
-func extractCodeownersContent(repo types.Repository) string {
-	if repo.Codeowners != nil && repo.Codeowners.Text != "" {
-		return repo.Codeowners.Text
-	}
-	if repo.CodeownersInDocs != nil && repo.CodeownersInDocs.Text != "" {
-		return repo.CodeownersInDocs.Text
-	}
-	if repo.CodeownersGithub != nil && repo.CodeownersGithub.Text != "" {
-		return repo.CodeownersGithub.Text
-	}
-	return ""
-}
-
-func shouldSkipRepository(repo types.Repository, cached types.CachedRepo) bool {
-	if cached.Repository == "" {
-		return false
-	}
-	return repo.PushedAt.Before(cached.LastScraped) || repo.PushedAt.Equal(cached.LastScraped)
-}
 
 func getGitHubToken(ctx context.Context, cfg aws.Config) (string, error) {
 	client := common.CreateSecretsClient(cfg)

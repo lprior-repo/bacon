@@ -1,3 +1,4 @@
+// Package main implements a GitHub repository scraper that fetches repository data and stores it in DynamoDB.
 package main
 
 import (
@@ -98,7 +99,7 @@ func executeHTTPRequest(req *http.Request) (*http.Response, error) {
 func decodeGitHubResponse(resp *http.Response) (*GitHubRepo, error) {
     defer func() {
         if err := resp.Body.Close(); err != nil {
-            // Log but don't fail on close error
+            log.Printf("Failed to close response body: %v", err)
         }
     }()
     
@@ -114,7 +115,7 @@ func decodeGitHubResponse(resp *http.Response) (*GitHubRepo, error) {
 func fetchRepositoryStep(data GitHubProcessingData) (GitHubProcessingData, error) {
     return withTracedSubsegment(data.Context, "fetch-github-repository", func(ctx context.Context, seg *xray.Segment) (GitHubProcessingData, error) {
         url := buildGitHubURL(data.Event.Owner, data.Event.Repository)
-        seg.AddAnnotation("github_url", url)
+        _ = seg.AddAnnotation("github_url", url)
         
         req, err := createAuthenticatedRequest(ctx, url)
         if err != nil {
@@ -126,7 +127,7 @@ func fetchRepositoryStep(data GitHubProcessingData) (GitHubProcessingData, error
             return data, fmt.Errorf("failed to fetch repository: %w", err)
         }
         
-        seg.AddAnnotation("response_status", resp.StatusCode)
+        _ = seg.AddAnnotation("response_status", resp.StatusCode)
         
         repo, err := decodeGitHubResponse(resp)
         if err != nil {
@@ -169,8 +170,8 @@ func storeRepositoryStep(data GitHubProcessingData) (GitHubProcessingData, error
         client := dynamodb.NewFromConfig(cfg)
         tableName := getTableName()
         
-        seg.AddAnnotation("table_name", tableName)
-        seg.AddAnnotation("repository_id", data.Repo.ID)
+        _ = seg.AddAnnotation("table_name", tableName)
+        _ = seg.AddAnnotation("repository_id", data.Repo.ID)
         
         item := createRepositoryItem(data.Repo)
         
@@ -207,7 +208,7 @@ func enrichWithTracing(annotations ...string) func(GitHubProcessingData) (GitHub
         // Add annotations in pairs (key, value)
         for i := 0; i < len(annotations)-1; i += 2 {
             if data.Segment != nil {
-                data.Segment.AddAnnotation(annotations[i], annotations[i+1])
+                _ = data.Segment.AddAnnotation(annotations[i], annotations[i+1])
             }
         }
         return data, nil
@@ -216,7 +217,7 @@ func enrichWithTracing(annotations ...string) func(GitHubProcessingData) (GitHub
 
 func addMetadataStep(data GitHubProcessingData) (GitHubProcessingData, error) {
     if data.Segment != nil && data.Repo != nil {
-        data.Segment.AddMetadata("repository_data", map[string]interface{}{
+        _ = data.Segment.AddMetadata("repository_data", map[string]interface{}{
             "stars":    data.Repo.Stars,
             "forks":    data.Repo.Forks,
             "language": data.Repo.Language,
@@ -232,7 +233,7 @@ func withTracedOperation[T any](ctx context.Context, operationName string, opera
     
     result, err := operation(ctx)
     if err != nil {
-        seg.AddError(err)
+        _ = seg.AddError(err)
     }
     
     return result, err
@@ -244,7 +245,7 @@ func withTracedSubsegment(ctx context.Context, segmentName string, operation fun
     
     result, err := operation(ctx, seg)
     if err != nil {
-        seg.AddError(err)
+        _ = seg.AddError(err)
     }
     
     return result, err

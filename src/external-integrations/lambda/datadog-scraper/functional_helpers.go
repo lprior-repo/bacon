@@ -1,3 +1,4 @@
+// Package main provides functional helpers for Datadog metric scraping and processing.
 package main
 
 import (
@@ -56,25 +57,12 @@ func withTracedOperation[T any](ctx context.Context, operationName string, opera
     
     result, err := operation(ctx)
     if err != nil {
-        seg.AddError(err)
+        _ = seg.AddError(err)
     }
     
     return result, err
 }
 
-func withTracedSubsegment[T any](ctx context.Context, segmentName string, operation func(context.Context, *xray.Segment) (T, error)) T {
-    ctx, seg := xray.BeginSubsegment(ctx, segmentName)
-    defer seg.Close(nil)
-    
-    result, err := operation(ctx, seg)
-    if err != nil {
-        seg.AddError(err)
-        var zero T
-        return zero
-    }
-    
-    return result
-}
 
 // Pure functional operations for metric storage
 type StoreOperation struct {

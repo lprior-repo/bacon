@@ -1,3 +1,4 @@
+// Package main implements GraphQL query resolvers for the resource ownership system.
 package main
 
 import (
@@ -89,7 +90,7 @@ func HandleRequest(ctx context.Context, event AppSyncEvent) (interface{}, error)
 	defer seg.Close(nil)
 
 	log.Printf("Handling AppSync query: %s", event.Info.FieldName)
-	seg.AddAnnotation("field_name", event.Info.FieldName)
+	_ = seg.AddAnnotation("field_name", event.Info.FieldName)
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -124,7 +125,7 @@ func handleGetResource(ctx context.Context, args map[string]interface{}) (*Resou
 	defer seg.Close(nil)
 
 	resourceID := args["id"].(string)
-	seg.AddAnnotation("resource_id", resourceID)
+	_ = seg.AddAnnotation("resource_id", resourceID)
 
 	// Mock resource for POC - in production would query Neptune
 	resource := &Resource{
@@ -159,7 +160,7 @@ func handleGetResourcesByConfidence(ctx context.Context, args map[string]interfa
 	defer seg.Close(nil)
 
 	minConfidence := args["minConfidence"].(float64)
-	seg.AddAnnotation("min_confidence", minConfidence)
+	_ = seg.AddAnnotation("min_confidence", minConfidence)
 
 	// Mock filtered resources
 	resources := []Resource{
@@ -183,7 +184,7 @@ func handleGetResourcesByConfidence(ctx context.Context, args map[string]interfa
 	return resources, nil
 }
 
-func handleGetConflictedRelationships(ctx context.Context, args map[string]interface{}) ([]Relationship, error) {
+func handleGetConflictedRelationships(ctx context.Context, _ map[string]interface{}) ([]Relationship, error) {
 	_, seg := xray.BeginSubsegment(ctx, "get-conflicted-relationships")
 	defer seg.Close(nil)
 
@@ -210,7 +211,7 @@ func handleGetRelationshipsBySource(ctx context.Context, args map[string]interfa
 	defer seg.Close(nil)
 
 	source := args["source"].(string)
-	seg.AddAnnotation("source", source)
+	_ = seg.AddAnnotation("source", source)
 
 	// Mock source-filtered relationships
 	relationships := []Relationship{
@@ -234,7 +235,7 @@ func handleSearchResources(ctx context.Context, args map[string]interface{}) ([]
 	defer seg.Close(nil)
 
 	searchText := args["text"].(string)
-	seg.AddAnnotation("search_text", searchText)
+	_ = seg.AddAnnotation("search_text", searchText)
 
 	// Mock search results
 	resources := []Resource{
@@ -254,7 +255,7 @@ func handleSearchResourcesByOwner(ctx context.Context, args map[string]interface
 	defer seg.Close(nil)
 
 	owner := args["owner"].(string)
-	seg.AddAnnotation("owner", owner)
+	_ = seg.AddAnnotation("owner", owner)
 
 	// Mock owner-based search
 	resources := []Resource{
@@ -269,7 +270,7 @@ func handleSearchResourcesByOwner(ctx context.Context, args map[string]interface
 	return resources, nil
 }
 
-func handleGetOwnershipCoverage(ctx context.Context, args map[string]interface{}) (*OwnershipStats, error) {
+func handleGetOwnershipCoverage(ctx context.Context, _ map[string]interface{}) (*OwnershipStats, error) {
 	_, seg := xray.BeginSubsegment(ctx, "get-ownership-coverage")
 	defer seg.Close(nil)
 
@@ -294,7 +295,7 @@ func handleGetOwnershipCoverage(ctx context.Context, args map[string]interface{}
 	return stats, nil
 }
 
-func handleGetConfidenceDistribution(ctx context.Context, args map[string]interface{}) (*ConfidenceStats, error) {
+func handleGetConfidenceDistribution(ctx context.Context, _ map[string]interface{}) (*ConfidenceStats, error) {
 	_, seg := xray.BeginSubsegment(ctx, "get-confidence-distribution")
 	defer seg.Close(nil)
 

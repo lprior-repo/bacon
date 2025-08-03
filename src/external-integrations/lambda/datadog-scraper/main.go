@@ -84,7 +84,7 @@ func createDatadogRequest(ctx context.Context, url, apiKey, appKey string) (*htt
 func decodeDatadogResponse(resp *http.Response) (*DatadogMetric, error) {
     defer func() {
         if err := resp.Body.Close(); err != nil {
-            // Log but don't fail on close error
+            log.Printf("Warning: failed to close response body: %v", err)
         }
     }()
     

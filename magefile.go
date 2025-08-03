@@ -253,15 +253,18 @@ func TestE2E() error {
 func Lint() error {
 	fmt.Println("🔍 Running linters...")
 	
+	// Use the latest version installed in GOPATH/bin
+	golangciLint := filepath.Join(os.Getenv("GOPATH"), "bin", "golangci-lint")
+	
 	// Check if golangci-lint is available
-	if err := sh.Run("golangci-lint", "--version"); err != nil {
-		fmt.Println("golangci-lint not found, installing...")
+	if err := sh.Run(golangciLint, "--version"); err != nil {
+		fmt.Println("golangci-lint not found, installing latest version...")
 		if err := sh.Run("go", "install", "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"); err != nil {
 			return fmt.Errorf("failed to install golangci-lint: %w", err)
 		}
 	}
 	
-	return sh.Run("golangci-lint", "run", "./...")
+	return sh.Run(golangciLint, "run", "./...")
 }
 
 // ModTidy runs go mod tidy on all modules
