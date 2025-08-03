@@ -50,29 +50,39 @@ jobs:
 
     - name: Tidy Go modules
       run: |
-        go mod tidy
-        find src -name "go.mod" -execdir go mod tidy \;
+        echo "📦 Tidying Go modules..."
+        nx run bacon:mod-tidy
 
     # BUILD TASK
-    - name: Build all projects with NX
+    - name: Build all Lambda functions
       if: matrix.task == 'build'
       run: |
-        echo "🚀 Building all projects with NX orchestration..."
-        nx run bacon:build-all
+        echo "🚀 Building all Lambda functions with parallel execution..."
+        find src -name "main.go" -path "*/lambda/*" | while read -r main_file; do
+          dir=$(dirname "$main_file")
+          name=$(basename "$dir")
+          echo "Building Lambda: $name"
+          cd "$dir"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o main .
+          echo "✅ Built $name"
+          cd - > /dev/null
+        done
+        echo "🎉 All Lambda functions built successfully!"
+        find src -name "main" -path "*/lambda/*" -exec ls -la {} \;
 
     # TEST TASK  
-    - name: Run all tests with NX
+    - name: Run all tests
       if: matrix.task == 'test'
       run: |
         echo "🧪 Running all tests with NX orchestration..."
-        nx run bacon:test-all
+        nx run bacon:test
 
     # LINT TASK
-    - name: Run all linting with NX
+    - name: Run all linting
       if: matrix.task == 'lint'
       run: |
         echo "🔍 Running all linting with NX orchestration..."
-        nx run bacon:lint-all
+        nx run bacon:lint
 
     - name: Upload security results
       if: matrix.task == 'lint' && always()

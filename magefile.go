@@ -36,10 +36,8 @@ func Build() error {
 	// Optimize concurrency based on system resources and I/O constraints
 	maxConcurrency := min(runtime.NumCPU()*2, len(lambdaFunctions)) // Allow more concurrency for I/O bound operations
 	
-	// Pre-warm build cache by downloading dependencies
-	if err := prewarmBuildCache(); err != nil {
-		fmt.Printf("Warning: failed to prewarm build cache: %v\n", err)
-	}
+	// Skip prewarming to avoid directory race conditions
+	// Dependencies will be downloaded during build if needed
 
 	// Build with work-stealing pool for better load balancing
 	return buildWithWorkStealing(lambdaFunctions, maxConcurrency)
@@ -379,14 +377,15 @@ func buildLambdaFunction(fn LambdaFunction) error {
 	}
 
 	// Build with aggressive optimizations and build cache
+	// Use absolute paths to avoid directory changing issues in concurrent execution
 	outputPath := filepath.Join(fn.Path, "main")
 	args := []string{
 		"build",
 		"-ldflags", "-s -w -buildid=", // Remove debug info and build ID for smaller binaries
 		"-trimpath",                   // Remove absolute paths for reproducible builds
 		"-buildvcs=false",            // Disable VCS info for faster builds
-		"-o", outputPath,
-		"./" + fn.Path,
+		"-o", outputPath,             // Output to absolute path
+		"./" + fn.Path,               // Build the Lambda directory
 	}
 	
 	return sh.RunWith(env, "go", args...)
