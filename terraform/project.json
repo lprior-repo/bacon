@@ -5,7 +5,7 @@
   "projectType": "application",
   "targets": {
     "initialize": {
-      "executor": "@nx-extend/terraform:initialize",
+      "executor": "@nx-extend/terraform:init",
       "options": {}
     },
     "providers": {

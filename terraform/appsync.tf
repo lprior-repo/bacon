@@ -71,7 +71,7 @@ module "appsync_query_resolver_lambda" {
   cloudwatch_logs_retention_in_days = 14
 
   # X-Ray tracing
-  tracing_config_mode = "Active"
+  tracing_mode = "Active"
 
   tags = merge(local.common_tags, {
     Function = "appsync-query-resolver"
@@ -119,7 +119,7 @@ module "appsync_mutation_resolver_lambda" {
   cloudwatch_logs_retention_in_days = 14
 
   # X-Ray tracing
-  tracing_config_mode = "Active"
+  tracing_mode = "Active"
 
   tags = merge(local.common_tags, {
     Function = "appsync-mutation-resolver"

@@ -89,13 +89,6 @@
     "destroy": {
       "cache": false
     },
-    "test": {
-      "cache": true,
-      "inputs": [
-        "{projectRoot}/**/*.tf",
-        "{projectRoot}/**/*.tfvars"
-      ]
-    },
     "format": {
       "cache": true,
       "inputs": [

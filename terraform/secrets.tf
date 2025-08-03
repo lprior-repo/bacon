@@ -7,15 +7,15 @@ module "github_secrets" {
   name        = "${local.name_prefix}-github-api-token"
   description = "GitHub API token for scraping repository data"
 
-  # Enable rotation for production environments
-  rotation_enabled = var.namespace == "prod"
+  # Enable rotation for production environments (handled separately if needed)
+  # rotation_enabled = var.namespace == "prod"
 
   # Automatic rotation configuration (30 days for production)
-  rotation_rules = var.namespace == "prod" ? [
-    {
-      automatically_after_days = 30
-    }
-  ] : []
+  # rotation_rules = var.namespace == "prod" ? [
+  #   {
+  #     automatically_after_days = 30
+  #   }
+  # ] : []
 
   # Secret value can be set via AWS CLI or console after creation
   create_policy = true
@@ -57,15 +57,15 @@ module "datadog_secrets" {
   name        = "${local.name_prefix}-datadog-api-key"
   description = "Datadog API key for metrics and monitoring integration"
 
-  # Enable rotation for production environments
-  rotation_enabled = var.namespace == "prod"
+  # Enable rotation for production environments (handled separately if needed)
+  # rotation_enabled = var.namespace == "prod"
 
   # Automatic rotation configuration (90 days for production)
-  rotation_rules = var.namespace == "prod" ? [
-    {
-      automatically_after_days = 90
-    }
-  ] : []
+  # rotation_rules = var.namespace == "prod" ? [
+  #   {
+  #     automatically_after_days = 90
+  #   }
+  # ] : []
 
   # Secret value can be set via AWS CLI or console after creation
   create_policy = true

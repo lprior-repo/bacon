@@ -39,10 +39,10 @@ module "beacon_orchestrator_step_function" {
     log_destination        = "${aws_cloudwatch_log_group.step_functions.arn}:*"
   }
 
-  # X-Ray tracing
-  tracing_configuration = {
-    enabled = true
-  }
+  # X-Ray tracing (not supported in this module version)
+  # tracing_configuration = {
+  #   enabled = true
+  # }
 
   # Type of Step Functions state machine
   type = "STANDARD"

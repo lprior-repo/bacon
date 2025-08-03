@@ -30,7 +30,7 @@ module "github_scraper_lambda" {
   # VPC configuration with IPv6 support
   vpc_subnet_ids                         = local.private_subnet_ids
   vpc_security_group_ids                 = [local.security_groups.lambda]
-  vpc_config_ipv6_allowed_for_dual_stack = true
+  # vpc_config_ipv6_allowed_for_dual_stack = true
 
   # Environment variables
   environment_variables = {
@@ -70,15 +70,15 @@ module "github_scraper_lambda" {
   cloudwatch_logs_retention_in_days = 14
   cloudwatch_logs_log_group_class   = "STANDARD"
 
-  # Advanced logging configuration
-  logging_config = {
-    log_format            = "JSON"
-    application_log_level = "INFO"
-    system_log_level      = "WARN"
-  }
+  # Advanced logging configuration (not supported in this module version)
+  # logging_config = {
+  #   log_format            = "JSON"
+  #   application_log_level = "INFO"
+  #   system_log_level      = "WARN"
+  # }
 
   # X-Ray tracing
-  tracing_config_mode = "Active"
+  tracing_mode = "Active"
 
   # SnapStart for faster cold starts (Java/Python only, but future-proofing)
   snap_start = var.environment == "prod" ? "PublishedVersions" : null
@@ -95,8 +95,8 @@ module "github_scraper_lambda" {
   publish = true
 
   # Create alias for deployment strategies  
-  create_current_version_alias = true
-  current_version_alias_name   = "current"
+  # create_current_version_alias = true
+  # current_version_alias_name   = "current"
 
   tags = merge(local.common_tags, {
     Function = "github-scraper"
@@ -160,7 +160,7 @@ module "datadog_scraper_lambda" {
   # VPC configuration with IPv6 support
   vpc_subnet_ids                         = local.private_subnet_ids
   vpc_security_group_ids                 = [local.security_groups.lambda]
-  vpc_config_ipv6_allowed_for_dual_stack = true
+  # vpc_config_ipv6_allowed_for_dual_stack = true
 
   # Environment variables
   environment_variables = {
@@ -200,15 +200,15 @@ module "datadog_scraper_lambda" {
   cloudwatch_logs_retention_in_days = 14
   cloudwatch_logs_log_group_class   = "STANDARD"
 
-  # Advanced logging configuration
-  logging_config = {
-    log_format            = "JSON"
-    application_log_level = "INFO"
-    system_log_level      = "WARN"
-  }
+  # Advanced logging configuration (not supported in this module version)
+  # logging_config = {
+  #   log_format            = "JSON"
+  #   application_log_level = "INFO"
+  #   system_log_level      = "WARN"
+  # }
 
   # X-Ray tracing
-  tracing_config_mode = "Active"
+  tracing_mode = "Active"
 
   # Event invoke configuration for resilience
   maximum_event_age_in_seconds = 300
@@ -220,8 +220,8 @@ module "datadog_scraper_lambda" {
 
   # Publish version for deployment strategies
   publish                      = true
-  create_current_version_alias = true
-  current_version_alias_name   = "current"
+  # create_current_version_alias = true
+  # current_version_alias_name   = "current"
 
   tags = merge(local.common_tags, {
     Function = "datadog-scraper"
@@ -300,7 +300,7 @@ module "processor_lambda" {
   cloudwatch_logs_retention_in_days = 14
 
   # X-Ray tracing
-  tracing_config_mode = "Active"
+  tracing_mode = "Active"
 
   # Dead letter queue
   dead_letter_target_arn = module.processor_dlq.queue_arn
@@ -377,7 +377,7 @@ module "codeowners_scraper_lambda" {
   cloudwatch_logs_retention_in_days = 14
 
   # X-Ray tracing
-  tracing_config_mode = "Active"
+  tracing_mode = "Active"
 
   # Dead letter queue
   dead_letter_target_arn = module.codeowners_scraper_dlq.queue_arn
@@ -453,7 +453,7 @@ module "openshift_scraper_lambda" {
   cloudwatch_logs_retention_in_days = 14
 
   # X-Ray tracing
-  tracing_config_mode = "Active"
+  tracing_mode = "Active"
 
   # Dead letter queue
   dead_letter_target_arn = module.openshift_scraper_dlq.queue_arn
