@@ -123,6 +123,7 @@ func initConflictDetector() *ConflictDetector {
 func extractRelationships(ctx context.Context, outputs []ScraperOutput) []Relationship {
     ctx, seg := xray.BeginSubsegment(ctx, "extract-relationships")
     defer seg.Close(nil)
+    _ = ctx // Context updated for tracing but not used further in this function
 
     var relationships []Relationship
 
@@ -226,6 +227,7 @@ func extractAWSRelationships(output ScraperOutput) []Relationship {
 func applyConfidenceScoring(ctx context.Context, relationships []Relationship, engine *ConfidenceEngine) []Relationship {
     ctx, seg := xray.BeginSubsegment(ctx, "apply-confidence-scoring")
     defer seg.Close(nil)
+    _ = ctx // Context updated for tracing but not used further in this function
 
     // Group relationships by target for multi-source analysis
     relationshipGroups := make(map[string][]Relationship)
@@ -300,6 +302,7 @@ func calculateFreshnessMultiplier(timestamp string, decayRate float64) float64 {
 func detectAndResolveConflicts(ctx context.Context, relationships []Relationship, detector *ConflictDetector) []Relationship {
     ctx, seg := xray.BeginSubsegment(ctx, "detect-resolve-conflicts")
     defer seg.Close(nil)
+    _ = ctx // Context updated for tracing but not used further in this function
 
     // Group relationships by same target resource
     resourceGroups := make(map[string][]Relationship)
@@ -368,6 +371,7 @@ func resolveConflict(conflicted []Relationship, detector *ConflictDetector) Rela
 func storeInNeptune(ctx context.Context, relationships []Relationship) error {
     ctx, seg := xray.BeginSubsegment(ctx, "store-in-neptune")
     defer seg.Close(nil)
+    _ = ctx // Context updated for tracing but not used further in this function
 
     // Mock Neptune storage for POC - in production would use Gremlin client
     // This would create vertices and edges in Neptune graph database

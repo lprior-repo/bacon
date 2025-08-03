@@ -96,7 +96,11 @@ func executeHTTPRequest(req *http.Request) (*http.Response, error) {
 }
 
 func decodeGitHubResponse(resp *http.Response) (*GitHubRepo, error) {
-    defer resp.Body.Close()
+    defer func() {
+        if err := resp.Body.Close(); err != nil {
+            // Log but don't fail on close error
+        }
+    }()
     
     var gitHubRepo GitHubRepo
     if err := json.NewDecoder(resp.Body).Decode(&gitHubRepo); err != nil {

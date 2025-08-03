@@ -82,7 +82,11 @@ func createDatadogRequest(ctx context.Context, url, apiKey, appKey string) (*htt
 }
 
 func decodeDatadogResponse(resp *http.Response) (*DatadogMetric, error) {
-    defer resp.Body.Close()
+    defer func() {
+        if err := resp.Body.Close(); err != nil {
+            // Log but don't fail on close error
+        }
+    }()
     
     var result struct {
         Series []DatadogMetric `json:"series"`
