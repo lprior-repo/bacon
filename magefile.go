@@ -253,17 +253,27 @@ func TestE2E() error {
 func Lint() error {
 	fmt.Println("🔍 Running linters...")
 	
-	// Use the latest version installed in GOPATH/bin
+	// First try the GOPATH/bin location
 	golangciLint := filepath.Join(os.Getenv("GOPATH"), "bin", "golangci-lint")
 	
-	// Check if golangci-lint is available
+	// Check if golangci-lint is available in GOPATH/bin
 	if err := sh.Run(golangciLint, "--version"); err != nil {
-		fmt.Println("golangci-lint not found, installing latest version...")
-		if err := sh.Run("go", "install", "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"); err != nil {
-			return fmt.Errorf("failed to install golangci-lint: %w", err)
+		fmt.Printf("golangci-lint not found in %s, trying system PATH...\n", golangciLint)
+		
+		// Try system PATH
+		if err := sh.Run("golangci-lint", "--version"); err != nil {
+			fmt.Println("golangci-lint not found anywhere, installing latest version...")
+			if err := sh.Run("go", "install", "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"); err != nil {
+				return fmt.Errorf("failed to install golangci-lint: %w", err)
+			}
+			// Use GOPATH version after install
+			return sh.Run(golangciLint, "run", "./...")
 		}
+		// Use system PATH version
+		return sh.Run("golangci-lint", "run", "./...")
 	}
 	
+	// Use GOPATH version
 	return sh.Run(golangciLint, "run", "./...")
 }
 
