@@ -5,8 +5,9 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: "1.23"
+  GO_VERSION: "1.24.5"
   NODE_VERSION: "20"
+  NX_VERSION: "21"
   NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
 
 jobs:
@@ -43,9 +44,10 @@ jobs:
     - name: Install dependencies
       run: |
         npm ci
+        npm install -g nx@${{ env.NX_VERSION }}
         npx nx --version  # Verify NX is available
         go install github.com/magefile/mage@latest
-        # Install latest golangci-lint
+        # Install latest golangci-lint for Go 1.24.5 compatibility
         curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
 
     - name: Tidy Go modules
