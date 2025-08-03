@@ -16,8 +16,9 @@
     "mage:ci": "mage ci"
   },
   "devDependencies": {
-    "nx": "^21.3.10",
-    "@nx/js": "^21.3.10"
+    "@nx-extend/terraform": "^9.0.0",
+    "@nx/js": "^21.3.10",
+    "nx": "^21.3.10"
   },
   "engines": {
     "node": ">=20"

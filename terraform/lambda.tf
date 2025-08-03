@@ -16,7 +16,7 @@ module "github_scraper_lambda" {
   source_path = "../src/code-analysis/lambda/github-scraper"
 
   # Serverless-first build configuration
-  create_package = false
+  create_package         = false
   local_existing_package = "../src/code-analysis/lambda/github-scraper/main.zip"
 
   # Optimized runtime configuration
@@ -28,15 +28,15 @@ module "github_scraper_lambda" {
   ephemeral_storage_size = 1024 # 1GB /tmp space
 
   # VPC configuration with IPv6 support
-  vpc_subnet_ids                  = local.private_subnet_ids
-  vpc_security_group_ids         = [local.security_groups.lambda]
+  vpc_subnet_ids                         = local.private_subnet_ids
+  vpc_security_group_ids                 = [local.security_groups.lambda]
   vpc_config_ipv6_allowed_for_dual_stack = true
 
   # Environment variables
   environment_variables = {
-    DYNAMODB_TABLE    = module.dynamodb_table.dynamodb_table_id
-    S3_BUCKET         = module.s3_bucket.s3_bucket_id
-    LOG_LEVEL         = "INFO"
+    DYNAMODB_TABLE          = module.dynamodb_table.dynamodb_table_id
+    S3_BUCKET               = module.s3_bucket.s3_bucket_id
+    LOG_LEVEL               = "INFO"
     AWS_LAMBDA_EXEC_WRAPPER = "/opt/otel-instrument" # OTEL tracing
   }
 
@@ -69,7 +69,7 @@ module "github_scraper_lambda" {
   # CloudWatch Logs with JSON formatting
   cloudwatch_logs_retention_in_days = 14
   cloudwatch_logs_log_group_class   = "STANDARD"
-  
+
   # Advanced logging configuration
   logging_config = {
     log_format            = "JSON"
@@ -86,14 +86,14 @@ module "github_scraper_lambda" {
   # Event invoke configuration for resilience
   maximum_event_age_in_seconds = 300
   maximum_retry_attempts       = 2
-  
+
   # Destination configuration
   destination_on_failure = aws_sqs_queue.github_scraper_dlq.arn
   destination_on_success = aws_sns_topic.lambda_success.arn
 
   # Publish version for blue/green deployments
   publish = true
-  
+
   # Create alias for deployment strategies  
   create_current_version_alias = true
   current_version_alias_name   = "current"
@@ -110,7 +110,7 @@ module "github_scraper_lambda" {
 resource "aws_sqs_queue" "github_scraper_dlq" {
   name = "${local.name_prefix}-github-scraper-dlq"
 
-  message_retention_seconds = 1209600 # 14 days
+  message_retention_seconds  = 1209600 # 14 days
   visibility_timeout_seconds = 300
 
   tags = merge(local.common_tags, {
@@ -120,7 +120,7 @@ resource "aws_sqs_queue" "github_scraper_dlq" {
 }
 
 module "github_scraper_dlq" {
-  source = "terraform-aws-modules/sqs/aws"
+  source  = "terraform-aws-modules/sqs/aws"
   version = "~> 4.0"
 
   name = aws_sqs_queue.github_scraper_dlq.name
@@ -146,7 +146,7 @@ module "datadog_scraper_lambda" {
   source_path = "../src/external-integrations/lambda/datadog-scraper"
 
   # Serverless-first build configuration
-  create_package = false
+  create_package         = false
   local_existing_package = "../src/external-integrations/lambda/datadog-scraper/main.zip"
 
   # Optimized runtime configuration
@@ -199,7 +199,7 @@ module "datadog_scraper_lambda" {
   # CloudWatch Logs with JSON formatting
   cloudwatch_logs_retention_in_days = 14
   cloudwatch_logs_log_group_class   = "STANDARD"
-  
+
   # Advanced logging configuration
   logging_config = {
     log_format            = "JSON"
@@ -213,13 +213,13 @@ module "datadog_scraper_lambda" {
   # Event invoke configuration for resilience
   maximum_event_age_in_seconds = 300
   maximum_retry_attempts       = 2
-  
+
   # Destination configuration
   destination_on_failure = aws_sqs_queue.datadog_scraper_dlq.arn
   destination_on_success = aws_sns_topic.lambda_success.arn
 
   # Publish version for deployment strategies
-  publish = true
+  publish                      = true
   create_current_version_alias = true
   current_version_alias_name   = "current"
 
@@ -235,7 +235,7 @@ module "datadog_scraper_lambda" {
 resource "aws_sqs_queue" "datadog_scraper_dlq" {
   name = "${local.name_prefix}-datadog-scraper-dlq"
 
-  message_retention_seconds = 1209600 # 14 days
+  message_retention_seconds  = 1209600 # 14 days
   visibility_timeout_seconds = 300
 
   tags = merge(local.common_tags, {
@@ -245,7 +245,7 @@ resource "aws_sqs_queue" "datadog_scraper_dlq" {
 }
 
 module "datadog_scraper_dlq" {
-  source = "terraform-aws-modules/sqs/aws"
+  source  = "terraform-aws-modules/sqs/aws"
   version = "~> 4.0"
 
   name = aws_sqs_queue.datadog_scraper_dlq.name
@@ -272,7 +272,7 @@ module "processor_lambda" {
   source_path = "${path.module}/src/processor"
 
   # Serverless-first build configuration
-  create_package = false
+  create_package         = false
   local_existing_package = "../src/data-processing/lambda/event-processor/main.zip"
 
   # Runtime configuration
@@ -285,11 +285,11 @@ module "processor_lambda" {
 
   # Environment variables
   environment_variables = {
-    DYNAMODB_TABLE     = module.dynamodb_table.dynamodb_table_id
-    S3_BUCKET          = module.s3_bucket.s3_bucket_id
-    NEPTUNE_ENDPOINT   = aws_neptune_cluster.main.endpoint
-    NEPTUNE_PORT       = "8182"
-    LOG_LEVEL          = "INFO"
+    DYNAMODB_TABLE   = module.dynamodb_table.dynamodb_table_id
+    S3_BUCKET        = module.s3_bucket.s3_bucket_id
+    NEPTUNE_ENDPOINT = aws_neptune_cluster.main.endpoint
+    NEPTUNE_PORT     = "8182"
+    LOG_LEVEL        = "INFO"
   }
 
   # IAM role configuration
@@ -315,8 +315,8 @@ module "processor_lambda" {
 resource "aws_sqs_queue" "processor_dlq" {
   name = "${local.name_prefix}-processor-dlq"
 
-  message_retention_seconds = 1209600 # 14 days
-  visibility_timeout_seconds = 900    # Match Lambda timeout
+  message_retention_seconds  = 1209600 # 14 days
+  visibility_timeout_seconds = 900     # Match Lambda timeout
 
   tags = merge(local.common_tags, {
     Function = "processor"
@@ -325,7 +325,7 @@ resource "aws_sqs_queue" "processor_dlq" {
 }
 
 module "processor_dlq" {
-  source = "terraform-aws-modules/sqs/aws"
+  source  = "terraform-aws-modules/sqs/aws"
   version = "~> 4.0"
 
   name = aws_sqs_queue.processor_dlq.name
@@ -350,7 +350,7 @@ module "codeowners_scraper_lambda" {
   source_path = "${path.module}/src/codeowners_scraper"
 
   # Serverless-first build configuration
-  create_package = false
+  create_package         = false
   local_existing_package = "../src/data-processing/lambda/event-processor/main.zip"
 
   # Runtime configuration
@@ -392,7 +392,7 @@ module "codeowners_scraper_lambda" {
 resource "aws_sqs_queue" "codeowners_scraper_dlq" {
   name = "${local.name_prefix}-codeowners-scraper-dlq"
 
-  message_retention_seconds = 1209600 # 14 days
+  message_retention_seconds  = 1209600 # 14 days
   visibility_timeout_seconds = 300
 
   tags = merge(local.common_tags, {
@@ -402,7 +402,7 @@ resource "aws_sqs_queue" "codeowners_scraper_dlq" {
 }
 
 module "codeowners_scraper_dlq" {
-  source = "terraform-aws-modules/sqs/aws"
+  source  = "terraform-aws-modules/sqs/aws"
   version = "~> 4.0"
 
   name = aws_sqs_queue.codeowners_scraper_dlq.name
@@ -427,7 +427,7 @@ module "openshift_scraper_lambda" {
   source_path = "${path.module}/src/openshift_scraper"
 
   # Serverless-first build configuration
-  create_package = false
+  create_package         = false
   local_existing_package = "../src/data-processing/lambda/event-processor/main.zip"
 
   # Runtime configuration
@@ -468,7 +468,7 @@ module "openshift_scraper_lambda" {
 resource "aws_sqs_queue" "openshift_scraper_dlq" {
   name = "${local.name_prefix}-openshift-scraper-dlq"
 
-  message_retention_seconds = 1209600 # 14 days
+  message_retention_seconds  = 1209600 # 14 days
   visibility_timeout_seconds = 300
 
   tags = merge(local.common_tags, {
@@ -478,7 +478,7 @@ resource "aws_sqs_queue" "openshift_scraper_dlq" {
 }
 
 module "openshift_scraper_dlq" {
-  source = "terraform-aws-modules/sqs/aws"
+  source  = "terraform-aws-modules/sqs/aws"
   version = "~> 4.0"
 
   name = aws_sqs_queue.openshift_scraper_dlq.name

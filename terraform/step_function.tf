@@ -6,7 +6,7 @@ module "beacon_orchestrator_step_function" {
   source  = "terraform-aws-modules/step-functions/aws"
   version = "~> 4.0"
 
-  name       = "${local.name_prefix}-orchestrator"
+  name = "${local.name_prefix}-orchestrator"
   definition = templatefile("${path.module}/templates/step_function_definition.json.tpl", {
     github_scraper_arn     = local.lambda_functions.github_scraper.arn
     datadog_scraper_arn    = local.lambda_functions.datadog_scraper.arn
@@ -142,16 +142,16 @@ resource "aws_cloudwatch_metric_alarm" "step_function_execution_throttled" {
 # Local values for Step Functions configuration
 locals {
   step_function_config = {
-    arn                    = module.beacon_orchestrator_step_function.state_machine_arn
-    name                   = module.beacon_orchestrator_step_function.state_machine_name
-    creation_date          = module.beacon_orchestrator_step_function.state_machine_creation_date
-    status                 = module.beacon_orchestrator_step_function.state_machine_status
-    log_group_name         = aws_cloudwatch_log_group.step_functions.name
+    arn            = module.beacon_orchestrator_step_function.state_machine_arn
+    name           = module.beacon_orchestrator_step_function.state_machine_name
+    creation_date  = module.beacon_orchestrator_step_function.state_machine_creation_date
+    status         = module.beacon_orchestrator_step_function.state_machine_status
+    log_group_name = aws_cloudwatch_log_group.step_functions.name
   }
 
   step_function_monitoring = {
-    failed_alarm_arn     = aws_cloudwatch_metric_alarm.step_function_execution_failed.arn
-    timeout_alarm_arn    = aws_cloudwatch_metric_alarm.step_function_execution_timeout.arn
-    throttled_alarm_arn  = aws_cloudwatch_metric_alarm.step_function_execution_throttled.arn
+    failed_alarm_arn    = aws_cloudwatch_metric_alarm.step_function_execution_failed.arn
+    timeout_alarm_arn   = aws_cloudwatch_metric_alarm.step_function_execution_timeout.arn
+    throttled_alarm_arn = aws_cloudwatch_metric_alarm.step_function_execution_throttled.arn
   }
 }

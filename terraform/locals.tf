@@ -1,4 +1,15 @@
 locals {
+  # Common tags applied to all resources
+  common_tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    Namespace   = var.namespace
+  }
+
+  # Current AWS region and account info
+  aws_region = var.aws_region
+
   # Map of all available IAM policies constructs for AWS services
   #
   # See more - https://docs.aws.amazon.com/step-functions/latest/dg/service-integration-iam-templates.html

@@ -1,111 +1,97 @@
-name: Fast CI with Multiple Agents
+name: CI/CD Pipeline
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
 
 env:
   GO_VERSION: "1.24.5"
   NODE_VERSION: "20"
-  NX_VERSION: "21"
   NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
 
 jobs:
-  # Matrix strategy with multiple agents for maximum parallelism
-  ci:
-    strategy:
-      fail-fast: false
-      matrix:
-        task: [build, test, lint]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+  # Core application jobs using reusable workflows
+  build:
+    name: Build
+    uses: ./.github/workflows/reusable/build.yml
+    with:
+      go-version: "1.24.5"
+      node-version: "20"
 
-    - name: Setup Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache: true
-        cache-dependency-path: |
-          go.sum
-          src/**/go.sum
+  test:
+    name: Test
+    uses: ./.github/workflows/reusable/test.yml
+    with:
+      go-version: "1.24.5"
+      node-version: "20"
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
+  lint:
+    name: Lint
+    uses: ./.github/workflows/reusable/lint.yml
+    with:
+      go-version: "1.24.5"
+      node-version: "20"
 
-    - name: Install dependencies
-      run: |
-        npm ci
-        npm install -g nx@${{ env.NX_VERSION }}
-        npx nx --version  # Verify NX is available
-        go install github.com/magefile/mage@latest
-        # Install latest golangci-lint for Go 1.24.5 compatibility
-        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+  # Terraform jobs using reusable workflow
+  terraform-format:
+    name: Terraform Format Check
+    uses: ./.github/workflows/reusable/terraform.yml
+    with:
+      terraform-action: "format-check"
+      node-version: "20"
 
-    - name: Tidy Go modules
-      run: |
-        echo "📦 Tidying Go modules..."
-        npx nx run bacon:mod-tidy
+  terraform-validate:
+    name: Terraform Validate
+    uses: ./.github/workflows/reusable/terraform.yml
+    with:
+      terraform-action: "validate"
+      node-version: "20"
 
-    # BUILD TASK
-    - name: Build all Lambda functions
-      if: matrix.task == 'build'
-      run: |
-        echo "🚀 Building all Lambda functions with parallel execution..."
-        find src -name "main.go" -path "*/lambda/*" | while read -r main_file; do
-          dir=$(dirname "$main_file")
-          name=$(basename "$dir")
-          echo "Building Lambda: $name"
-          cd "$dir"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o main .
-          echo "✅ Built $name"
-          cd - > /dev/null
-        done
-        echo "🎉 All Lambda functions built successfully!"
-        find src -name "main" -path "*/lambda/*" -exec ls -la {} \;
+  terraform-plan:
+    name: Terraform Plan
+    uses: ./.github/workflows/reusable/terraform.yml
+    with:
+      terraform-action: "plan"
+      node-version: "20"
+    # Only run plan on main branch pushes to avoid credential issues on PRs
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
-    # TEST TASK  
-    - name: Run all tests
-      if: matrix.task == 'test'
-      run: |
-        echo "🧪 Running all tests with NX orchestration..."
-        npx nx run bacon:test
+  terraform-security:
+    name: Terraform Security Scan
+    uses: ./.github/workflows/reusable/terraform.yml
+    with:
+      terraform-action: "security-scan"
+      node-version: "20"
 
-    # LINT TASK
-    - name: Run all linting
-      if: matrix.task == 'lint'
-      run: |
-        echo "🔍 Running all linting with NX orchestration..."
-        npx nx run bacon:lint
-
-    - name: Archive security results
-      if: matrix.task == 'lint' && always()
-      run: |
-        if [ -f gosec-report.sarif ]; then
-          echo "Security scan completed - report available"
-          ls -la gosec-report.sarif
-        else
-          echo "No security report generated"
-        fi
-
-  # Consolidation job to ensure all matrix jobs succeeded
+  # Consolidation job to ensure all jobs succeeded
   ci-success:
+    name: CI Success
     runs-on: ubuntu-latest
-    needs: [ci]
+    needs: [build, test, lint, terraform-format, terraform-validate, terraform-security]
+    # Include terraform-plan only if it was run
     if: always()
     steps:
     - name: Check all jobs succeeded
       run: |
-        if [ "${{ needs.ci.result }}" != "success" ]; then
+        # Check required jobs
+        if [[ "${{ needs.build.result }}" != "success" || \
+              "${{ needs.test.result }}" != "success" || \
+              "${{ needs.lint.result }}" != "success" || \
+              "${{ needs.terraform-format.result }}" != "success" || \
+              "${{ needs.terraform-validate.result }}" != "success" || \
+              "${{ needs.terraform-security.result }}" != "success" ]]; then
           echo "❌ CI pipeline failed!"
           exit 1
         fi
-        echo "✅ All CI tasks completed successfully with maximum parallelism!"
+        
+        # Check terraform-plan if it was supposed to run
+        if [[ "${{ github.ref }}" == "refs/heads/main" && "${{ github.event_name }}" == "push" ]]; then
+          if [[ "${{ needs.terraform-plan.result }}" != "success" ]]; then
+            echo "❌ Terraform plan failed!"
+            exit 1
+          fi
+        fi
+        
+        echo "✅ All CI tasks completed successfully!"

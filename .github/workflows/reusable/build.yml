@@ -1,0 +1,67 @@
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: 'Go version to use'
+        required: false
+        type: string
+        default: '1.24.5'
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '20'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          src/**/go.sum
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: |
+        npm ci
+        npm install -g nx@21
+        npx nx --version
+        go install github.com/magefile/mage@latest
+
+    - name: Tidy Go modules
+      run: |
+        echo "📦 Tidying Go modules..."
+        npx nx run bacon:mod-tidy
+
+    - name: Build all Lambda functions
+      run: |
+        echo "🚀 Building all Lambda functions with parallel execution..."
+        find src -name "main.go" -path "*/lambda/*" | while read -r main_file; do
+          dir=$(dirname "$main_file")
+          name=$(basename "$dir")
+          echo "Building Lambda: $name"
+          cd "$dir"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w' -o main .
+          echo "✅ Built $name"
+          cd - > /dev/null
+        done
+        echo "🎉 All Lambda functions built successfully!"
+        find src -name "main" -path "*/lambda/*" -exec ls -la {} \;

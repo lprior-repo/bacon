@@ -1,0 +1,69 @@
+name: Lint
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: 'Go version to use'
+        required: false
+        type: string
+        default: '1.24.5'
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '20'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          src/**/go.sum
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: |
+        npm ci
+        npm install -g nx@21
+        npx nx --version
+        go install github.com/magefile/mage@latest
+        # Install latest golangci-lint for Go 1.24.5 compatibility
+        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin latest
+
+    - name: Tidy Go modules
+      run: |
+        echo "📦 Tidying Go modules..."
+        npx nx run bacon:mod-tidy
+
+    - name: Run all linting
+      run: |
+        echo "🔍 Running all linting with NX orchestration..."
+        npx nx run bacon:lint
+
+    - name: Archive security results
+      if: always()
+      run: |
+        if [ -f gosec-report.sarif ]; then
+          echo "Security scan completed - report available"
+          ls -la gosec-report.sarif
+        else
+          echo "No security report generated"
+        fi

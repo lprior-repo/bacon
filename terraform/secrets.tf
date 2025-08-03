@@ -43,9 +43,9 @@ module "github_secrets" {
   } : {}
 
   tags = merge(local.common_tags, {
-    Name        = "${local.name_prefix}-github-api-token"
-    SecretType  = "github-api"
-    Rotation    = var.namespace == "prod" ? "enabled" : "disabled"
+    Name       = "${local.name_prefix}-github-api-token"
+    SecretType = "github-api"
+    Rotation   = var.namespace == "prod" ? "enabled" : "disabled"
   })
 }
 
@@ -93,9 +93,9 @@ module "datadog_secrets" {
   } : {}
 
   tags = merge(local.common_tags, {
-    Name        = "${local.name_prefix}-datadog-api-key"
-    SecretType  = "datadog-api"
-    Rotation    = var.namespace == "prod" ? "enabled" : "disabled"
+    Name       = "${local.name_prefix}-datadog-api-key"
+    SecretType = "datadog-api"
+    Rotation   = var.namespace == "prod" ? "enabled" : "disabled"
   })
 }
 

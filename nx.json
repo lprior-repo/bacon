@@ -46,6 +46,81 @@
         "{projectRoot}/go.sum"
       ]
     },
+    "initialize": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.tf"
+      ],
+      "outputs": [
+        "{projectRoot}/.terraform",
+        "{projectRoot}/.terraform.lock.hcl"
+      ]
+    },
+    "providers": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.tf"
+      ],
+      "outputs": [
+        "{projectRoot}/.terraform/providers"
+      ]
+    },
+    "validate": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.tf",
+        "{projectRoot}/**/*.tfvars"
+      ]
+    },
+    "plan": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.tf",
+        "{projectRoot}/**/*.tfvars"
+      ],
+      "outputs": [
+        "{projectRoot}/terraform.tfplan"
+      ]
+    },
+    "apply": {
+      "cache": false,
+      "dependsOn": ["plan"]
+    },
+    "destroy": {
+      "cache": false
+    },
+    "test": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.tf",
+        "{projectRoot}/**/*.tfvars"
+      ]
+    },
+    "format": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.tf"
+      ],
+      "outputs": [
+        "{projectRoot}/**/*.tf"
+      ]
+    },
+    "format-check": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.tf"
+      ]
+    },
+    "security-scan": {
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*.tf",
+        "{projectRoot}/**/*.tfvars"
+      ],
+      "outputs": [
+        "{projectRoot}/checkov-report.json"
+      ]
+    },
     "terraform-plan": {
       "cache": true,
       "inputs": [
@@ -92,7 +167,7 @@
     "default": {
       "runner": "nx/tasks-runners/default",
       "options": {
-        "cacheableOperations": ["build", "test", "lint", "mod-tidy"],
+        "cacheableOperations": ["build", "test", "lint", "mod-tidy", "initialize", "providers", "validate", "plan", "terraform-plan", "format", "format-check", "security-scan"],
         "parallel": true,
         "maxParallel": 10,
         "captureStderr": true,

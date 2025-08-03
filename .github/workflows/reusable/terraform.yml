@@ -1,0 +1,90 @@
+name: Terraform
+
+on:
+  workflow_call:
+    inputs:
+      terraform-version:
+        description: 'Terraform version to use'
+        required: false
+        type: string
+        default: 'latest'
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '20'
+      terraform-action:
+        description: 'Terraform action to run (validate, plan, format-check, security-scan)'
+        required: true
+        type: string
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: |
+        npm ci
+        npm install -g nx@21
+        npx nx --version
+
+    - name: Install Checkov (for security scanning)
+      if: inputs.terraform-action == 'security-scan'
+      run: |
+        pip3 install checkov
+
+    - name: Run Terraform Initialize
+      if: inputs.terraform-action != 'format-check'
+      run: |
+        echo "🔧 Initializing Terraform..."
+        npx nx run terraform:initialize
+
+    - name: Run Terraform Action
+      run: |
+        case "${{ inputs.terraform-action }}" in
+          "validate")
+            echo "✅ Validating Terraform configuration..."
+            npx nx run terraform:validate
+            ;;
+          "plan")
+            echo "📋 Creating Terraform plan..."
+            npx nx run terraform:plan
+            ;;
+          "format-check")
+            echo "🎨 Checking Terraform formatting..."
+            npx nx run terraform:format-check
+            ;;
+          "security-scan")
+            echo "🔍 Running security scan..."
+            npx nx run terraform:security-scan
+            ;;
+          *)
+            echo "❌ Unknown terraform action: ${{ inputs.terraform-action }}"
+            exit 1
+            ;;
+        esac
+
+    - name: Upload Terraform Plan
+      if: inputs.terraform-action == 'plan'
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-plan
+        path: terraform/terraform.tfplan
+        retention-days: 30

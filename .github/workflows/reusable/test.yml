@@ -1,0 +1,57 @@
+name: Test
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: 'Go version to use'
+        required: false
+        type: string
+        default: '1.24.5'
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '20'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          src/**/go.sum
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: |
+        npm ci
+        npm install -g nx@21
+        npx nx --version
+        go install github.com/magefile/mage@latest
+
+    - name: Tidy Go modules
+      run: |
+        echo "📦 Tidying Go modules..."
+        npx nx run bacon:mod-tidy
+
+    - name: Run all tests
+      run: |
+        echo "🧪 Running all tests with NX orchestration..."
+        npx nx run bacon:test

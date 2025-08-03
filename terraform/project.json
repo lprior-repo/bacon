@@ -4,6 +4,62 @@
   "sourceRoot": "terraform",
   "projectType": "application",
   "targets": {
+    "initialize": {
+      "executor": "@nx-extend/terraform:initialize",
+      "options": {}
+    },
+    "providers": {
+      "executor": "@nx-extend/terraform:providers",
+      "options": {}
+    },
+    "validate": {
+      "executor": "@nx-extend/terraform:validate",
+      "options": {}
+    },
+    "plan": {
+      "executor": "@nx-extend/terraform:plan",
+      "options": {
+        "out": "terraform.tfplan"
+      }
+    },
+    "apply": {
+      "executor": "@nx-extend/terraform:apply",
+      "options": {
+        "planFile": "terraform.tfplan"
+      },
+      "dependsOn": ["plan"]
+    },
+    "destroy": {
+      "executor": "@nx-extend/terraform:destroy",
+      "options": {
+        "autoApprove": true
+      }
+    },
+    "test": {
+      "executor": "@nx-extend/terraform:test",
+      "options": {}
+    },
+    "format": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform fmt -recursive",
+        "cwd": "terraform"
+      }
+    },
+    "format-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform fmt -check -recursive",
+        "cwd": "terraform"
+      }
+    },
+    "security-scan": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "checkov -d . --framework terraform --output cli --quiet",
+        "cwd": "terraform"
+      }
+    },
     "terraform-plan": {
       "executor": "nx:run-commands",
       "options": {

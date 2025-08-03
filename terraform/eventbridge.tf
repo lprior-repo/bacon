@@ -8,26 +8,26 @@ module "eventbridge" {
 
   # Event bus configuration
   event_source_name = "beacon.scraper"
-  
+
   # Rules configuration for scheduled scraping
   rules = {
     github_scraper_schedule = {
       description         = "Trigger GitHub scraper on schedule"
-      schedule_expression = "rate(1 hour)"  # Run every hour
-      state              = "ENABLED"
+      schedule_expression = "rate(1 hour)" # Run every hour
+      state               = "ENABLED"
     }
-    
+
     datadog_scraper_schedule = {
       description         = "Trigger Datadog scraper on schedule"
-      schedule_expression = "rate(30 minutes)"  # Run every 30 minutes
-      state              = "ENABLED"
+      schedule_expression = "rate(30 minutes)" # Run every 30 minutes
+      state               = "ENABLED"
     }
-    
-    
+
+
     processor_schedule = {
       description         = "Trigger data processor on schedule"
-      schedule_expression = "rate(15 minutes)"  # Run every 15 minutes
-      state              = "ENABLED"
+      schedule_expression = "rate(15 minutes)" # Run every 15 minutes
+      state               = "ENABLED"
     }
   }
 
@@ -35,9 +35,9 @@ module "eventbridge" {
   targets = {
     github_scraper_schedule = [
       {
-        name            = "TriggerGithubScraper"
-        arn             = aws_sfn_state_machine.scraper_workflow.arn
-        role_arn        = aws_iam_role.eventbridge_role.arn
+        name     = "TriggerGithubScraper"
+        arn      = aws_sfn_state_machine.scraper_workflow.arn
+        role_arn = aws_iam_role.eventbridge_role.arn
         input_transformer = {
           input_paths = {}
           input_template = jsonencode({
@@ -47,12 +47,12 @@ module "eventbridge" {
         }
       }
     ]
-    
+
     datadog_scraper_schedule = [
       {
-        name            = "TriggerDatadogScraper"
-        arn             = aws_sfn_state_machine.scraper_workflow.arn
-        role_arn        = aws_iam_role.eventbridge_role.arn
+        name     = "TriggerDatadogScraper"
+        arn      = aws_sfn_state_machine.scraper_workflow.arn
+        role_arn = aws_iam_role.eventbridge_role.arn
         input_transformer = {
           input_paths = {}
           input_template = jsonencode({
@@ -62,13 +62,13 @@ module "eventbridge" {
         }
       }
     ]
-    
-    
+
+
     processor_schedule = [
       {
-        name            = "TriggerProcessor"
-        arn             = aws_sfn_state_machine.scraper_workflow.arn
-        role_arn        = aws_iam_role.eventbridge_role.arn
+        name     = "TriggerProcessor"
+        arn      = aws_sfn_state_machine.scraper_workflow.arn
+        role_arn = aws_iam_role.eventbridge_role.arn
         input_transformer = {
           input_paths = {}
           input_template = jsonencode({
@@ -128,12 +128,12 @@ resource "aws_iam_role_policy" "eventbridge_policy" {
 
 # Step Function state machine for scraper workflow orchestration
 resource "aws_sfn_state_machine" "scraper_workflow" {
-  name       = "${local.name_prefix}-scraper-workflow"
-  role_arn   = aws_iam_role.step_function_role.arn
+  name     = "${local.name_prefix}-scraper-workflow"
+  role_arn = aws_iam_role.step_function_role.arn
   definition = templatefile("${path.module}/templates/step_function_definition.json.tpl", {
     lambda_function_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.lambda_function_name}"
-    region             = data.aws_region.current.name
-    account_id         = data.aws_caller_identity.current.account_id
+    region              = data.aws_region.current.name
+    account_id          = data.aws_caller_identity.current.account_id
   })
 
   logging_configuration {
@@ -192,7 +192,7 @@ resource "aws_cloudwatch_metric_alarm" "eventbridge_failed_invocations" {
   statistic           = "Sum"
   threshold           = "1"
   alarm_description   = "This metric monitors EventBridge failed invocations"
-  alarm_actions       = []  # Add SNS topic ARN for notifications
+  alarm_actions       = [] # Add SNS topic ARN for notifications
 
   dimensions = {
     RuleName = "${local.name_prefix}-scraper-schedule"

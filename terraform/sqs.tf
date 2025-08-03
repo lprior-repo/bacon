@@ -6,11 +6,11 @@ module "scraper_queue" {
   name = "${local.name_prefix}-scraper-queue"
 
   # Queue configuration
-  visibility_timeout_seconds = 300  # 5 minutes - should be >= Lambda timeout
-  message_retention_seconds  = 1209600  # 14 days
-  max_message_size          = 262144  # 256 KB
-  delay_seconds             = 0
-  receive_wait_time_seconds = 20  # Long polling
+  visibility_timeout_seconds = 300     # 5 minutes - should be >= Lambda timeout
+  message_retention_seconds  = 1209600 # 14 days
+  max_message_size           = 262144  # 256 KB
+  delay_seconds              = 0
+  receive_wait_time_seconds  = 20 # Long polling
 
   # Dead letter queue configuration
   redrive_policy = {
@@ -41,8 +41,8 @@ module "scraper_dlq" {
   name = "${local.name_prefix}-scraper-dlq"
 
   # DLQ configuration - longer retention for analysis
-  message_retention_seconds = 1209600  # 14 days
-  max_message_size          = 262144   # 256 KB
+  message_retention_seconds = 1209600 # 14 days
+  max_message_size          = 262144  # 256 KB
 
   # Server-side encryption
   kms_master_key_id                 = "alias/aws/sqs"
@@ -63,11 +63,11 @@ module "processing_queue" {
   name = "${local.name_prefix}-processing-queue"
 
   # Queue configuration optimized for processing results
-  visibility_timeout_seconds = 180   # 3 minutes
-  message_retention_seconds  = 604800  # 7 days
-  max_message_size          = 262144  # 256 KB
-  delay_seconds             = 0
-  receive_wait_time_seconds = 20  # Long polling
+  visibility_timeout_seconds = 180    # 3 minutes
+  message_retention_seconds  = 604800 # 7 days
+  max_message_size           = 262144 # 256 KB
+  delay_seconds              = 0
+  receive_wait_time_seconds  = 20 # Long polling
 
   # Dead letter queue configuration
   redrive_policy = {
@@ -94,8 +94,8 @@ module "processing_dlq" {
   name = "${local.name_prefix}-processing-dlq"
 
   # DLQ configuration
-  message_retention_seconds = 1209600  # 14 days
-  max_message_size          = 262144   # 256 KB
+  message_retention_seconds = 1209600 # 14 days
+  max_message_size          = 262144  # 256 KB
 
   # Server-side encryption
   kms_master_key_id                 = "alias/aws/sqs"
@@ -149,7 +149,7 @@ resource "aws_cloudwatch_metric_alarm" "scraper_queue_dlq_alarm" {
   statistic           = "Average"
   threshold           = "1"
   alarm_description   = "This metric monitors scraper DLQ message count"
-  alarm_actions       = []  # Add SNS topic ARN for notifications
+  alarm_actions       = [] # Add SNS topic ARN for notifications
 
   dimensions = {
     QueueName = module.scraper_dlq.queue_name
@@ -170,7 +170,7 @@ resource "aws_cloudwatch_metric_alarm" "processing_queue_dlq_alarm" {
   statistic           = "Average"
   threshold           = "1"
   alarm_description   = "This metric monitors processing DLQ message count"
-  alarm_actions       = []  # Add SNS topic ARN for notifications
+  alarm_actions       = [] # Add SNS topic ARN for notifications
 
   dimensions = {
     QueueName = module.processing_dlq.queue_name

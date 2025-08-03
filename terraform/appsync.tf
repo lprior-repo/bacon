@@ -159,12 +159,12 @@ resource "aws_appsync_resolver" "get_projects" {
   data_source = aws_appsync_datasource.neptune_query.name
 
   request_template = jsonencode({
-    version = "2017-02-28"
+    version   = "2017-02-28"
     operation = "Invoke"
     payload = {
-      field = "getProjects"
+      field     = "getProjects"
       arguments = "$util.toMap($context.arguments)"
-      identity = "$util.toMap($context.identity)"
+      identity  = "$util.toMap($context.identity)"
     }
   })
 
@@ -179,12 +179,12 @@ resource "aws_appsync_resolver" "get_project" {
   data_source = aws_appsync_datasource.neptune_query.name
 
   request_template = jsonencode({
-    version = "2017-02-28"
+    version   = "2017-02-28"
     operation = "Invoke"
     payload = {
-      field = "getProject"
+      field     = "getProject"
       arguments = "$util.toMap($context.arguments)"
-      identity = "$util.toMap($context.identity)"
+      identity  = "$util.toMap($context.identity)"
     }
   })
 
@@ -199,12 +199,12 @@ resource "aws_appsync_resolver" "search_projects" {
   data_source = aws_appsync_datasource.neptune_query.name
 
   request_template = jsonencode({
-    version = "2017-02-28"
+    version   = "2017-02-28"
     operation = "Invoke"
     payload = {
-      field = "searchProjects"
+      field     = "searchProjects"
       arguments = "$util.toMap($context.arguments)"
-      identity = "$util.toMap($context.identity)"
+      identity  = "$util.toMap($context.identity)"
     }
   })
 
@@ -219,12 +219,12 @@ resource "aws_appsync_resolver" "get_metrics" {
   data_source = aws_appsync_datasource.neptune_query.name
 
   request_template = jsonencode({
-    version = "2017-02-28"
+    version   = "2017-02-28"
     operation = "Invoke"
     payload = {
-      field = "getMetrics"
+      field     = "getMetrics"
       arguments = "$util.toMap($context.arguments)"
-      identity = "$util.toMap($context.identity)"
+      identity  = "$util.toMap($context.identity)"
     }
   })
 
@@ -239,12 +239,12 @@ resource "aws_appsync_resolver" "create_project" {
   data_source = aws_appsync_datasource.neptune_mutation.name
 
   request_template = jsonencode({
-    version = "2017-02-28"
+    version   = "2017-02-28"
     operation = "Invoke"
     payload = {
-      field = "createProject"
+      field     = "createProject"
       arguments = "$util.toMap($context.arguments)"
-      identity = "$util.toMap($context.identity)"
+      identity  = "$util.toMap($context.identity)"
     }
   })
 
@@ -259,12 +259,12 @@ resource "aws_appsync_resolver" "update_project" {
   data_source = aws_appsync_datasource.neptune_mutation.name
 
   request_template = jsonencode({
-    version = "2017-02-28"
+    version   = "2017-02-28"
     operation = "Invoke"
     payload = {
-      field = "updateProject"
+      field     = "updateProject"
       arguments = "$util.toMap($context.arguments)"
-      identity = "$util.toMap($context.identity)"
+      identity  = "$util.toMap($context.identity)"
     }
   })
 
@@ -279,12 +279,12 @@ resource "aws_appsync_resolver" "delete_project" {
   data_source = aws_appsync_datasource.neptune_mutation.name
 
   request_template = jsonencode({
-    version = "2017-02-28"
+    version   = "2017-02-28"
     operation = "Invoke"
     payload = {
-      field = "deleteProject"
+      field     = "deleteProject"
       arguments = "$util.toMap($context.arguments)"
-      identity = "$util.toMap($context.identity)"
+      identity  = "$util.toMap($context.identity)"
     }
   })
 
@@ -316,8 +316,8 @@ locals {
   }
 
   appsync_resolvers = {
-    query_lambda_arn     = module.appsync_query_resolver_lambda.lambda_function_arn
-    mutation_lambda_arn  = module.appsync_mutation_resolver_lambda.lambda_function_arn
-    log_group_name       = aws_cloudwatch_log_group.appsync.name
+    query_lambda_arn    = module.appsync_query_resolver_lambda.lambda_function_arn
+    mutation_lambda_arn = module.appsync_mutation_resolver_lambda.lambda_function_arn
+    log_group_name      = aws_cloudwatch_log_group.appsync.name
   }
 }

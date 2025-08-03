@@ -3,13 +3,13 @@
 
 # Neptune Cluster
 resource "aws_neptune_cluster" "main" {
-  cluster_identifier              = local.neptune_cluster_name
-  engine                         = "neptune"
-  engine_version                 = "1.3.3.0"
-  backup_retention_period        = var.namespace == "prod" ? 7 : 1
-  preferred_backup_window        = "07:00-09:00"
-  preferred_maintenance_window   = "sun:05:00-sun:06:00"
-  
+  cluster_identifier           = local.neptune_cluster_name
+  engine                       = "neptune"
+  engine_version               = "1.3.3.0"
+  backup_retention_period      = var.namespace == "prod" ? 7 : 1
+  preferred_backup_window      = "07:00-09:00"
+  preferred_maintenance_window = "sun:05:00-sun:06:00"
+
   # Serverless configuration
   serverless_v2_scaling_configuration {
     max_capacity = var.namespace == "prod" ? 16.0 : 4.0
@@ -25,13 +25,13 @@ resource "aws_neptune_cluster" "main" {
   neptune_parameter_group_name    = local.neptune_config.parameter_group_name
 
   # Security configuration
-  storage_encrypted               = true
-  kms_key_id                     = aws_kms_key.neptune.arn
+  storage_encrypted                   = true
+  kms_key_id                          = aws_kms_key.neptune.arn
   iam_database_authentication_enabled = true
-  
+
   # Deletion protection and backup
-  deletion_protection = var.namespace == "prod"
-  skip_final_snapshot = var.namespace != "prod"
+  deletion_protection       = var.namespace == "prod"
+  skip_final_snapshot       = var.namespace != "prod"
   final_snapshot_identifier = var.namespace == "prod" ? "${local.neptune_cluster_name}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
 
   # Logging configuration
@@ -67,7 +67,7 @@ resource "aws_neptune_cluster_parameter_group" "main" {
 
   parameter {
     name  = "neptune_query_timeout"
-    value = "120000"  # 2 minutes
+    value = "120000" # 2 minutes
   }
 
   parameter {
@@ -281,24 +281,24 @@ resource "aws_iam_role_policy" "neptune_enhanced_policy" {
 locals {
   neptune_cluster = {
     cluster_identifier = aws_neptune_cluster.main.cluster_identifier
-    endpoint          = aws_neptune_cluster.main.endpoint
-    reader_endpoint   = aws_neptune_cluster.main.reader_endpoint
-    port             = aws_neptune_cluster.main.port
-    arn              = aws_neptune_cluster.main.arn
-    cluster_members  = aws_neptune_cluster.main.cluster_members
+    endpoint           = aws_neptune_cluster.main.endpoint
+    reader_endpoint    = aws_neptune_cluster.main.reader_endpoint
+    port               = aws_neptune_cluster.main.port
+    arn                = aws_neptune_cluster.main.arn
+    cluster_members    = aws_neptune_cluster.main.cluster_members
   }
 
   neptune_monitoring = {
-    cpu_alarm_arn         = aws_cloudwatch_metric_alarm.neptune_cpu_utilization.arn
-    connections_alarm_arn = aws_cloudwatch_metric_alarm.neptune_database_connections.arn
+    cpu_alarm_arn            = aws_cloudwatch_metric_alarm.neptune_cpu_utilization.arn
+    connections_alarm_arn    = aws_cloudwatch_metric_alarm.neptune_database_connections.arn
     gremlin_errors_alarm_arn = aws_cloudwatch_metric_alarm.neptune_gremlin_errors.arn
-    audit_log_group      = aws_cloudwatch_log_group.neptune_audit.name
-    slowquery_log_group  = aws_cloudwatch_log_group.neptune_slowquery.name
+    audit_log_group          = aws_cloudwatch_log_group.neptune_audit.name
+    slowquery_log_group      = aws_cloudwatch_log_group.neptune_slowquery.name
   }
 
   neptune_security = {
-    kms_key_id    = aws_kms_key.neptune.key_id
-    kms_key_arn   = aws_kms_key.neptune.arn
-    kms_alias     = aws_kms_alias.neptune.name
+    kms_key_id  = aws_kms_key.neptune.key_id
+    kms_key_arn = aws_kms_key.neptune.arn
+    kms_alias   = aws_kms_alias.neptune.name
   }
 }

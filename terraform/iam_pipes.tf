@@ -125,7 +125,7 @@ locals {
     for k, v in local.role_for_pipes :
     k => {
       for s_k, s_v in v.service_integrations :
-      # s_k - is a key in aws_service_policies
+      # s_k - is a key in pipes_service_policies
       # value - is a list of matched ARNs
       # Sample ARNs:
       # arn:aws:kafka:eu-west-1:835367859851:cluster/cluster-name/cluster-uuid
@@ -147,7 +147,7 @@ locals {
   # * `actions` - list of actions in policy statement
   # * `condition` - list of condition in policy statement
 
-  aws_service_policies = {
+  pipes_service_policies = {
     sqs_source = {
       actions = [
         "sqs:ReceiveMessage",
@@ -376,13 +376,13 @@ data "aws_iam_policy_document" "service" {
     for_each = { for s_k, s_v in each.value : s_k => s_v if length(compact(s_v)) > 0 }
 
     content {
-      effect    = lookup(local.aws_service_policies[statement.key], "effect", "Allow")
+      effect    = lookup(local.pipes_service_policies[statement.key], "effect", "Allow")
       sid       = replace(replace(title(replace("${each.key}${title(statement.key)}", "/[_-]/", " ")), " ", ""), "/[^0-9A-Za-z]*/", "")
-      actions   = local.aws_service_policies[statement.key]["actions"]
+      actions   = local.pipes_service_policies[statement.key]["actions"]
       resources = tolist(statement.value)
 
       dynamic "condition" {
-        for_each = lookup(local.aws_service_policies[statement.key], "condition", [])
+        for_each = lookup(local.pipes_service_policies[statement.key], "condition", [])
         content {
           test     = condition.value.test
           variable = condition.value.variable
