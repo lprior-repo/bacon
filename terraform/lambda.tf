@@ -28,8 +28,8 @@ module "github_scraper_lambda" {
   ephemeral_storage_size = 1024 # 1GB /tmp space
 
   # VPC configuration with IPv6 support
-  vpc_subnet_ids                         = local.private_subnet_ids
-  vpc_security_group_ids                 = [local.security_groups.lambda]
+  vpc_subnet_ids         = local.private_subnet_ids
+  vpc_security_group_ids = [local.security_groups.lambda]
   # vpc_config_ipv6_allowed_for_dual_stack = true
 
   # Environment variables
@@ -158,8 +158,8 @@ module "datadog_scraper_lambda" {
   ephemeral_storage_size = 1024
 
   # VPC configuration with IPv6 support
-  vpc_subnet_ids                         = local.private_subnet_ids
-  vpc_security_group_ids                 = [local.security_groups.lambda]
+  vpc_subnet_ids         = local.private_subnet_ids
+  vpc_security_group_ids = [local.security_groups.lambda]
   # vpc_config_ipv6_allowed_for_dual_stack = true
 
   # Environment variables
@@ -219,7 +219,7 @@ module "datadog_scraper_lambda" {
   destination_on_success = aws_sns_topic.lambda_success.arn
 
   # Publish version for deployment strategies
-  publish                      = true
+  publish = true
   # create_current_version_alias = true
   # current_version_alias_name   = "current"
 
