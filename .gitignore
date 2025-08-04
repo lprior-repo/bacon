@@ -33,6 +33,15 @@ go.work
 coverage.out
 coverage/
 
+# Go binaries (compiled executables without extension)
+**/lambda/**/main
+**/lambda/**/bootstrap
+src/**/parsers/parsers
+src/**/lambda/*/event-processor
+src/**/lambda/*/github-scraper
+src/**/lambda/*/openshift-scraper
+datadog-scraper
+
 # Lambda binaries
 src/**/lambda/*/main
 src/**/lambda/*/bootstrap
