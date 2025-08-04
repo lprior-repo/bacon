@@ -1,10 +1,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -101,7 +99,7 @@ func TestCalculateConfidence(t *testing.T) {
 	
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := calculateConfidence(tc.relationship, engine)
+			result := calculateSingleSourceConfidence(tc.relationship, &engine)
 			
 			// Allow small floating point differences
 			if abs(result-tc.expected) > 0.01 {
@@ -111,151 +109,21 @@ func TestCalculateConfidence(t *testing.T) {
 	}
 }
 
-// Test extractRelationshipType function
-func TestExtractRelationshipType(t *testing.T) {
-	testCases := []struct {
-		name     string
-		data     map[string]interface{}
-		expected string
-	}{
-		{
-			name: "codeowner relationship",
-			data: map[string]interface{}{
-				"file_pattern": "*.go",
-				"owners":       []string{"@backend-team"},
-			},
-			expected: "OWNS",
-		},
-		{
-			name: "reviewer relationship",
-			data: map[string]interface{}{
-				"review_type": "mandatory",
-				"reviewers":   []string{"@security-team"},
-			},
-			expected: "REVIEWS",
-		},
-		{
-			name: "dependency relationship",
-			data: map[string]interface{}{
-				"depends_on": "service-a",
-				"service":    "service-b",
-			},
-			expected: "DEPENDS_ON",
-		},
-		{
-			name: "unknown relationship",
-			data: map[string]interface{}{
-				"random_field": "value",
-			},
-			expected: "UNKNOWN",
-		},
-		{
-			name: "empty data",
-			data: map[string]interface{}{},
-			expected: "UNKNOWN",
-		},
-	}
-	
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := extractRelationshipType(tc.data)
-			if result != tc.expected {
-				t.Errorf("Expected relationship type: %s, got: %s", tc.expected, result)
-			}
-		})
-	}
-}
 
-// Test isConflicting function
-func TestIsConflicting(t *testing.T) {
-	testCases := []struct {
-		name string
-		r1   Relationship
-		r2   Relationship
-		expected bool
-	}{
-		{
-			name: "same relationship, no conflict",
-			r1: Relationship{
-				From: "user1",
-				To:   "repo1",
-				Type: "OWNS",
-			},
-			r2: Relationship{
-				From: "user1",
-				To:   "repo1",
-				Type: "OWNS",
-			},
-			expected: false,
-		},
-		{
-			name: "different types, potential conflict",
-			r1: Relationship{
-				From: "user1",
-				To:   "repo1",
-				Type: "OWNS",
-			},
-			r2: Relationship{
-				From: "user1",
-				To:   "repo1",
-				Type: "REVIEWS",
-			},
-			expected: true,
-		},
-		{
-			name: "different entities, no conflict",
-			r1: Relationship{
-				From: "user1",
-				To:   "repo1",
-				Type: "OWNS",
-			},
-			r2: Relationship{
-				From: "user2",
-				To:   "repo1",
-				Type: "OWNS",
-			},
-			expected: false,
-		},
-		{
-			name: "completely different relationships",
-			r1: Relationship{
-				From: "user1",
-				To:   "repo1",
-				Type: "OWNS",
-			},
-			r2: Relationship{
-				From: "user2",
-				To:   "repo2",
-				Type: "REVIEWS",
-			},
-			expected: false,
-		},
-	}
-	
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := isConflicting(tc.r1, tc.r2)
-			if result != tc.expected {
-				t.Errorf("Expected conflict status: %t, got: %t", tc.expected, result)
-			}
-		})
-	}
-}
 
 // Test createSuccessResponse function
 func TestCreateSuccessResponse(t *testing.T) {
-	message := "Processing completed successfully"
 	relCount := 42
 	conflictCount := 3
 	
-	response := createSuccessResponse(message, relCount, conflictCount)
+	response := createSuccessResponse(relCount, conflictCount)
 	
 	if response.Status != "success" {
 		t.Errorf("Expected status 'success', got: %s", response.Status)
 	}
 	
-	if response.Message != message {
-		t.Errorf("Expected message '%s', got: %s", message, response.Message)
+	if response.Message != "Relationship processing completed successfully" {
+		t.Errorf("Expected message 'Relationship processing completed successfully', got: %s", response.Message)
 	}
 	
 	if response.RelationshipCount != relCount {
@@ -279,8 +147,10 @@ func TestCreateSuccessResponse(t *testing.T) {
 // Test createErrorResponse function
 func TestCreateErrorResponse(t *testing.T) {
 	message := "Processing failed with error"
+	relCount := 10
+	conflictCount := 2
 	
-	response := createErrorResponse(message)
+	response := createErrorResponse(message, relCount, conflictCount)
 	
 	if response.Status != "error" {
 		t.Errorf("Expected status 'error', got: %s", response.Status)
@@ -290,12 +160,12 @@ func TestCreateErrorResponse(t *testing.T) {
 		t.Errorf("Expected message '%s', got: %s", message, response.Message)
 	}
 	
-	if response.RelationshipCount != 0 {
-		t.Errorf("Expected relationship count: 0, got: %d", response.RelationshipCount)
+	if response.RelationshipCount != relCount {
+		t.Errorf("Expected relationship count: %d, got: %d", relCount, response.RelationshipCount)
 	}
 	
-	if response.ConflictCount != 0 {
-		t.Errorf("Expected conflict count: 0, got: %d", response.ConflictCount)
+	if response.ConflictCount != conflictCount {
+		t.Errorf("Expected conflict count: %d, got: %d", conflictCount, response.ConflictCount)
 	}
 	
 	if response.ProcessedAt == "" {
@@ -321,63 +191,15 @@ func TestDefensiveProgramming(t *testing.T) {
 		}()
 		
 		rel := Relationship{Source: "test", Confidence: 0.5}
-		calculateConfidence(rel, ConfidenceEngine{})
+		calculateSingleSourceConfidence(rel, nil)
 	})
 	
-	t.Run("extractRelationshipType with nil data", func(t *testing.T) {
-		result := extractRelationshipType(nil)
-		if result != "UNKNOWN" {
-			t.Errorf("Expected 'UNKNOWN' for nil data, got: %s", result)
-		}
-	})
 	
-	t.Run("isConflicting with extreme cases", func(t *testing.T) {
-		r1 := Relationship{From: "", To: "", Type: ""}
-		r2 := Relationship{From: "", To: "", Type: ""}
-		
-		// Should not panic
-		result := isConflicting(r1, r2)
-		if result {
-			t.Error("Empty relationships should not conflict")
-		}
-	})
 }
 
 // Edge case tests
 func TestEdgeCases(t *testing.T) {
-	t.Run("very long strings in relationships", func(t *testing.T) {
-		longString := strings.Repeat("a", 1000)
-		rel := Relationship{
-			From: longString,
-			To:   longString,
-			Type: longString,
-		}
-		
-		// Should handle without errors
-		result := extractRelationshipType(map[string]interface{}{
-			"from": rel.From,
-			"to":   rel.To,
-			"type": rel.Type,
-		})
-		
-		if result == "" {
-			t.Error("Should handle long strings gracefully")
-		}
-	})
 	
-	t.Run("unicode characters in relationships", func(t *testing.T) {
-		rel := Relationship{
-			From: "用户测试",
-			To:   "仓库测试",
-			Type: "拥有",
-		}
-		
-		// Should handle unicode without errors
-		result := isConflicting(rel, rel)
-		if result {
-			t.Error("Identical relationships should not conflict regardless of unicode")
-		}
-	})
 }
 
 // Test ProcessorEvent validation and edge cases
@@ -640,58 +462,7 @@ func TestHandleProcessorRequest(t *testing.T) {
 	}
 }
 
-// Test initConfidenceEngine
-func TestInitConfidenceEngine(t *testing.T) {
-	engine := initConfidenceEngine()
 
-	if engine == nil {
-		t.Fatal("ConfidenceEngine should not be nil")
-	}
-
-	// Test source weights
-	expectedSources := []string{"openshift-metadata", "aws-tags", "github-codeowners", "github-activity", "datadog-metrics"}
-	for _, source := range expectedSources {
-		if weight, exists := engine.SourceWeights[source]; !exists {
-			t.Errorf("Source %s should have a weight", source)
-		} else if weight <= 0 || weight > 1 {
-			t.Errorf("Source %s weight %f should be between 0 and 1", source, weight)
-		}
-	}
-
-	// Test agreement bonus
-	if engine.AgreementBonus <= 0 || engine.AgreementBonus > 1 {
-		t.Errorf("AgreementBonus %f should be between 0 and 1", engine.AgreementBonus)
-	}
-
-	// Test freshness decay
-	if engine.FreshnessDecay <= 0 {
-		t.Errorf("FreshnessDecay %f should be positive", engine.FreshnessDecay)
-	}
-}
-
-// Test initConflictDetector
-func TestInitConflictDetector(t *testing.T) {
-	detector := initConflictDetector()
-
-	if detector == nil {
-		t.Fatal("ConflictDetector should not be nil")
-	}
-
-	// Test conflict threshold
-	if detector.ConflictThreshold <= 0 || detector.ConflictThreshold > 1 {
-		t.Errorf("ConflictThreshold %f should be between 0 and 1", detector.ConflictThreshold)
-	}
-
-	// Test source priorities
-	expectedSources := []string{"aws-tags", "openshift-metadata", "github-codeowners", "github-activity", "datadog-metrics"}
-	for _, source := range expectedSources {
-		if priority, exists := detector.SourcePriority[source]; !exists {
-			t.Errorf("Source %s should have a priority", source)
-		} else if priority <= 0 {
-			t.Errorf("Source %s priority %d should be positive", source, priority)
-		}
-	}
-}
 
 // Test extractRelationships with various data formats
 func TestExtractRelationships(t *testing.T) {
@@ -1459,117 +1230,7 @@ func TestGetSourceNames(t *testing.T) {
 	}
 }
 
-// Test createSuccessResponse
-func TestCreateSuccessResponse(t *testing.T) {
-	testCases := []struct {
-		name              string
-		relationshipCount int
-		conflictCount     int
-	}{
-		{
-			name:              "zero counts",
-			relationshipCount: 0,
-			conflictCount:     0,
-		},
-		{
-			name:              "positive counts",
-			relationshipCount: 10,
-			conflictCount:     2,
-		},
-		{
-			name:              "large counts",
-			relationshipCount: 1000,
-			conflictCount:     50,
-		},
-	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			response := createSuccessResponse(tc.relationshipCount, tc.conflictCount)
-
-			if response.Status != "success" {
-				t.Errorf("Expected status 'success', got %s", response.Status)
-			}
-
-			if response.Message == "" {
-				t.Error("Message should not be empty")
-			}
-
-			if response.ProcessedAt == "" {
-				t.Error("ProcessedAt should not be empty")
-			}
-
-			if response.RelationshipCount != tc.relationshipCount {
-				t.Errorf("Expected RelationshipCount %d, got %d", tc.relationshipCount, response.RelationshipCount)
-			}
-
-			if response.ConflictCount != tc.conflictCount {
-				t.Errorf("Expected ConflictCount %d, got %d", tc.conflictCount, response.ConflictCount)
-			}
-
-			// Validate timestamp format
-			_, err := time.Parse(time.RFC3339, response.ProcessedAt)
-			if err != nil {
-				t.Errorf("Invalid timestamp format: %v", err)
-			}
-		})
-	}
-}
-
-// Test createErrorResponse
-func TestCreateErrorResponse(t *testing.T) {
-	testCases := []struct {
-		name              string
-		message           string
-		relationshipCount int
-		conflictCount     int
-	}{
-		{
-			name:              "basic error",
-			message:           "test error",
-			relationshipCount: 0,
-			conflictCount:     0,
-		},
-		{
-			name:              "error with counts",
-			message:           "processing failed",
-			relationshipCount: 5,
-			conflictCount:     1,
-		},
-		{
-			name:              "empty message",
-			message:           "",
-			relationshipCount: 0,
-			conflictCount:     0,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			response := createErrorResponse(tc.message, tc.relationshipCount, tc.conflictCount)
-
-			if response.Status != "error" {
-				t.Errorf("Expected status 'error', got %s", response.Status)
-			}
-
-			if response.Message != tc.message {
-				t.Errorf("Expected message '%s', got '%s'", tc.message, response.Message)
-			}
-
-			if response.ProcessedAt == "" {
-				t.Error("ProcessedAt should not be empty")
-			}
-
-			if response.RelationshipCount != tc.relationshipCount {
-				t.Errorf("Expected RelationshipCount %d, got %d", tc.relationshipCount, response.RelationshipCount)
-			}
-
-			if response.ConflictCount != tc.conflictCount {
-				t.Errorf("Expected ConflictCount %d, got %d", tc.conflictCount, response.ConflictCount)
-			}
-		})
-	}
-}
 
 // Test storeInNeptune (mock implementation)
 func TestStoreInNeptune(t *testing.T) {

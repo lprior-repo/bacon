@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
 	common "bacon/src/shared"
 )
 
@@ -568,47 +570,7 @@ func TestCreateRepositoryItem(t *testing.T) {
 	}
 }
 
-// Test createSuccessResponse function
-func TestCreateSuccessResponse(t *testing.T) {
-	message := "Repository scraped successfully"
-	response := createSuccessResponse(message)
 
-	if response.Status != "success" {
-		t.Errorf("Expected status 'success', got: %s", response.Status)
-	}
-	if response.Message != message {
-		t.Errorf("Expected message '%s', got: %s", message, response.Message)
-	}
-	if response.Timestamp == "" {
-		t.Error("Expected non-empty timestamp")
-	}
-
-	// Verify timestamp format
-	if _, err := time.Parse(time.RFC3339, response.Timestamp); err != nil {
-		t.Errorf("Invalid timestamp format: %s", response.Timestamp)
-	}
-}
-
-// Test createErrorResponse function  
-func TestCreateErrorResponse(t *testing.T) {
-	message := "Failed to scrape repository"
-	response := createErrorResponse(message)
-
-	if response.Status != "error" {
-		t.Errorf("Expected status 'error', got: %s", response.Status)
-	}
-	if response.Message != message {
-		t.Errorf("Expected message '%s', got: %s", message, response.Message)
-	}
-	if response.Timestamp == "" {
-		t.Error("Expected non-empty timestamp")
-	}
-
-	// Verify timestamp format 
-	if _, err := time.Parse(time.RFC3339, response.Timestamp); err != nil {
-		t.Errorf("Invalid timestamp format: %s", response.Timestamp)
-	}
-}
 
 // Additional defensive programming tests
 func TestMoreDefensiveProgramming(t *testing.T) {

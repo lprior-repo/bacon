@@ -235,8 +235,7 @@ func applyConfidenceScoring(ctx context.Context, relationships []Relationship, e
 	relationshipGroups := make(map[string][]Relationship)
 	for _, rel := range relationships {
 		key := fmt.Sprintf("%s->%s", rel.From, rel.To)
-		_, _, _, _, _ = relationshipGroups, key, relationshipGroups, key, rel
-
+		relationshipGroups[key] = append(relationshipGroups[key], rel)
 	}
 
 	var scoredRelationships []Relationship
@@ -258,6 +257,11 @@ func applyConfidenceScoring(ctx context.Context, relationships []Relationship, e
 }
 
 func calculateSingleSourceConfidence(rel Relationship, engine *ConfidenceEngine) float64 {
+	// Defensive programming: handle nil engine
+	if engine == nil {
+		panic("ConfidenceEngine cannot be nil")
+	}
+	
 	sourceWeight := engine.SourceWeights[rel.Source]
 	if sourceWeight == 0 {
 		sourceWeight = 0.5 // Default for unknown sources
@@ -298,8 +302,8 @@ func calculateFreshnessMultiplier(timestamp string, decayRate float64) float64 {
 	age := time.Since(parsedTime)
 	daysSinceUpdate := age.Hours() / 24
 
-	// Exponential decay over 30 days
-	return math.Exp(-daysSinceUpdate * decayRate / 30)
+	// Exponential decay: more aggressive decay over time
+	return math.Exp(-daysSinceUpdate * decayRate)
 }
 
 func detectAndResolveConflicts(ctx context.Context, relationships []Relationship, detector *ConflictDetector) []Relationship {
@@ -318,7 +322,7 @@ func detectAndResolveConflicts(ctx context.Context, relationships []Relationship
 
 	for _, group := range resourceGroups {
 		if len(group) == 1 {
-			resolvedRelationships = append(resolvedRelationships, group[1])
+			resolvedRelationships = append(resolvedRelationships, group[0])
 			continue
 		}
 
@@ -360,7 +364,7 @@ func resolveConflict(conflicted []Relationship, detector *ConflictDetector) Rela
 			priority = 999 // Unknown sources get lowest priority
 		}
 
-		if priority <= bestPriority {
+		if priority < bestPriority {
 			bestPriority = priority
 			bestRel = rel
 		}
@@ -418,7 +422,7 @@ func countConflicts(relationships []Relationship) int {
 }
 
 func getSourceNames(outputs []ScraperOutput) []string {
-	var sources []string
+	sources := make([]string, 0, len(outputs))
 	for _, output := range outputs {
 		sources = append(sources, output.Source)
 	}
