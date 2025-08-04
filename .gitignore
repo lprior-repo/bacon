@@ -41,6 +41,9 @@ src/**/lambda/*/event-processor
 src/**/lambda/*/github-scraper
 src/**/lambda/*/openshift-scraper
 datadog-scraper
+codeowners-scraper
+mutation
+query
 
 # Lambda binaries
 src/**/lambda/*/main
