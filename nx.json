@@ -127,6 +127,32 @@
     "terraform-apply": {
       "cache": false,
       "dependsOn": ["terraform-plan"]
+    },
+    "test-mutation": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "{projectRoot}/**/*.go",
+        "{projectRoot}/**/*_test.go"
+      ],
+      "outputs": [
+        "{projectRoot}/mutation-results"
+      ],
+      "dependsOn": ["test"]
+    },
+    "test-mutation-module": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "{projectRoot}/**/*.go",
+        "{projectRoot}/**/*_test.go"
+      ],
+      "outputs": [
+        "{projectRoot}/mutation-results"
+      ],
+      "dependsOn": ["test"]
     }
   },
   "namedInputs": {
@@ -160,7 +186,7 @@
     "default": {
       "runner": "nx/tasks-runners/default",
       "options": {
-        "cacheableOperations": ["build", "test", "lint", "mod-tidy", "initialize", "providers", "validate", "plan", "terraform-plan", "format", "format-check", "security-scan"],
+        "cacheableOperations": ["build", "test", "lint", "mod-tidy", "initialize", "providers", "validate", "plan", "terraform-plan", "format", "format-check", "security-scan", "test-mutation", "test-mutation-module"],
         "parallel": true,
         "maxParallel": 10,
         "captureStderr": true,

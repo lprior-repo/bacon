@@ -75,3 +75,15 @@ gosec-report.sarif
 # Temporary files
 tmp/
 temp/
+
+# Mutation testing artifacts
+**/mutation-results/
+**/testdata/
+mutation_output.log
+report.json
+**/go-mutesting-*/
+/tmp/go-mutesting-*
+
+# Fuzz testing cache directories
+**/testdata/fuzz/
+**/testdata/rapid/

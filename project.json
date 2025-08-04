@@ -85,12 +85,40 @@
         "cwd": "{projectRoot}"
       }
     },
+    "test-mutation": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "mage testmutation",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test-mutation-module": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "mage testmutationmodule {args.module}",
+        "cwd": "{projectRoot}"
+      }
+    },
     "ci": {
       "executor": "nx:run-commands",
       "options": {
         "commands": [
           "nx run bacon:mod-tidy-all",
           "nx run bacon:test-all",
+          "nx run bacon:lint-all",
+          "nx run bacon:build-all"
+        ],
+        "parallel": false,
+        "cwd": "{projectRoot}"
+      }
+    },
+    "ci-with-mutation": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "nx run bacon:mod-tidy-all",
+          "nx run bacon:test-all",
+          "nx run bacon:test-mutation",
           "nx run bacon:lint-all",
           "nx run bacon:build-all"
         ],

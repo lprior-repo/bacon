@@ -1,0 +1,54 @@
+# Mutation Testing Configuration
+# Configuration for go-mutesting from Avito-tech
+
+# General settings
+debug: false
+verbose: true
+
+# Target threshold for mutation testing
+# We want 95% mutation catching rate
+mutation_threshold: 95
+
+# Timeout for each mutation test execution (in seconds)
+exec_timeout: 60
+
+# Test recursively in subdirectories
+test_recursive: true
+
+# Exclude patterns (files/directories to skip)
+exclude_patterns:
+  - "*_test.go"
+  - "testdata/*"
+  - "vendor/*"
+  - "node_modules/*"
+  - ".terraform/*"
+  - ".nx/*"
+
+# Specific mutators to enable/disable
+# By default, all mutators are enabled
+disable_mutators: []
+
+# Target packages/directories for mutation testing
+targets:
+  - "./src/code-analysis/cache"
+  - "./src/code-analysis/clients"
+  - "./src/code-analysis/parsers"
+  - "./src/code-analysis/types"
+  - "./src/code-analysis/lambda/codeowners-scraper"
+  - "./src/code-analysis/lambda/github-scraper"
+  - "./src/data-processing/lambda/event-processor"
+  - "./src/external-integrations/lambda/datadog-scraper"
+  - "./src/external-integrations/lambda/openshift-scraper"
+  - "./src/graphql-api/resolvers/mutation"
+  - "./src/graphql-api/resolvers/query"
+  - "./src/shared"
+
+# Custom execution command for running tests
+# This will run tests for each mutation
+exec_command: "go test -v -timeout=30s"
+
+# Output directory for mutation results
+output_dir: "./mutation-results"
+
+# Generate detailed reports
+generate_reports: true
