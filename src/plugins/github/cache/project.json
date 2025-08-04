@@ -1,0 +1,19 @@
+{
+  "name": "github-cache",
+  "root": "src/plugins/github/cache",
+  "projectType": "library",
+  "tags": [
+    "scope:plugins",
+    "type:library",
+    "platform:go",
+    "github"
+  ],
+  "targets": {
+    "build": {},
+    "test": {},
+    "lint": {},
+    "mod-tidy": {},
+    "test-mutation": {},
+    "test-mutation-module": {}
+  }
+}

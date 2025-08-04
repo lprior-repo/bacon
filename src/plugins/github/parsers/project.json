@@ -1,0 +1,19 @@
+{
+  "name": "github-parsers",
+  "root": "src/plugins/github/parsers",
+  "projectType": "library",
+  "tags": [
+    "scope:plugins",
+    "type:library",
+    "platform:go",
+    "github"
+  ],
+  "targets": {
+    "build": {},
+    "test": {},
+    "lint": {},
+    "mod-tidy": {},
+    "test-mutation": {},
+    "test-mutation-module": {}
+  }
+}

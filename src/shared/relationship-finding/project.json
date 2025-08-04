@@ -1,0 +1,18 @@
+{
+  "name": "shared-relationship-finding",
+  "root": "src/shared/relationship-finding",
+  "projectType": "library",
+  "tags": [
+    "scope:shared",
+    "type:library",
+    "platform:go"
+  ],
+  "targets": {
+    "build": {},
+    "test": {},
+    "lint": {},
+    "mod-tidy": {},
+    "test-mutation": {},
+    "test-mutation-module": {}
+  }
+}

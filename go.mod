@@ -1,23 +1,8 @@
 module bacon
 
-replace bacon/src/shared => ./src/shared
-
-replace bacon/src/code-analysis/types => ./src/code-analysis/types
-
-replace bacon/src/code-analysis/parsers => ./src/code-analysis/parsers
-
-replace bacon/src/code-analysis/clients => ./src/code-analysis/clients
-
-replace bacon/src/code-analysis/cache => ./src/code-analysis/cache
-
 go 1.24.5
 
 require (
-	bacon/src/code-analysis/cache v0.0.0-00010101000000-000000000000
-	bacon/src/code-analysis/clients v0.0.0-00010101000000-000000000000
-	bacon/src/code-analysis/parsers v0.0.0-00010101000000-000000000000
-	bacon/src/code-analysis/types v0.0.0
-	bacon/src/shared v0.0.0
 	github.com/aws/aws-lambda-go v1.49.0
 	github.com/aws/aws-sdk-go-v2 v1.37.1
 	github.com/aws/aws-sdk-go-v2/config v1.26.1
@@ -25,6 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.25.5
 	github.com/aws/aws-xray-sdk-go/v2 v2.0.0
 	github.com/magefile/mage v1.15.0
+	pgregory.net/rapid v1.2.0
 )
 
 require (
@@ -52,5 +38,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
 	google.golang.org/grpc v1.64.1 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
-	pgregory.net/rapid v1.2.0 // indirect
 )

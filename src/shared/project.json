@@ -1,37 +1,19 @@
 {
   "name": "shared",
   "root": "src/shared",
-  "sourceRoot": "src/shared",
   "projectType": "library",
+  "tags": ["scope:shared", "type:library", "platform:go"],
   "targets": {
     "build": {
-      "executor": "nx:run-commands",
       "options": {
-        "command": "go build -v ./...",
-        "cwd": "src/shared"
+        "command": "go build ./...",
+        "cwd": "{projectRoot}"
       }
     },
-    "test": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "go test -v ./...",
-        "cwd": "src/shared"
-      }
-    },
-    "lint": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "golangci-lint run",
-        "cwd": "src/shared"
-      }
-    },
-    "mod-tidy": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "go mod tidy",
-        "cwd": "src/shared"
-      }
-    }
-  },
-  "tags": ["go", "library", "shared"]
+    "test": {},
+    "lint": {},
+    "mod-tidy": {},
+    "test-mutation": {},
+    "test-mutation-module": {}
+  }
 }

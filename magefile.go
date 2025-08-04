@@ -18,6 +18,8 @@ import (
 
 var Default = Build
 
+const mutationThreshold = 95.0
+
 // Build compiles all Lambda functions with optimized parallelism and caching
 func Build() error {
 	mg.Deps(Clean, ModTidy) // Ensure dependencies are ready
@@ -34,11 +36,8 @@ func Build() error {
 
 	fmt.Printf("Building %d Lambda functions with optimized parallelism...\n", len(lambdaFunctions))
 
-	// Optimize concurrency based on system resources and I/O constraints
-	maxConcurrency := min(runtime.NumCPU()*2, len(lambdaFunctions)) // Allow more concurrency for I/O bound operations
-	
-	// Skip prewarming to avoid directory race conditions
-	// Dependencies will be downloaded during build if needed
+	// Optimize concurrency based on system resources
+	maxConcurrency := min(runtime.NumCPU(), len(lambdaFunctions))
 
 	// Build with work-stealing pool for better load balancing
 	return buildWithWorkStealing(lambdaFunctions, maxConcurrency)
@@ -97,40 +96,6 @@ func buildWorker(id int, workQueue <-chan LambdaFunction, results chan<- error) 
 	}
 }
 
-// prewarmBuildCache downloads all dependencies to warm the build cache
-func prewarmBuildCache() error {
-	fmt.Println("🔥 Prewarming build cache...")
-	
-	modules, err := findGoModules()
-	if err != nil {
-		return err
-	}
-	
-	// Download dependencies in parallel
-	var wg sync.WaitGroup
-	maxConcurrency := runtime.NumCPU()
-	semaphore := make(chan struct{}, maxConcurrency)
-	
-	for _, module := range modules {
-		wg.Add(1)
-		go func(modPath string) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-			
-			dir := filepath.Dir(modPath)
-			oldDir, _ := os.Getwd()
-			os.Chdir(dir)
-			defer os.Chdir(oldDir)
-			
-			// Download and verify dependencies
-			sh.Run("go", "mod", "download", "-x") // -x for verbose output
-		}(module)
-	}
-	
-	wg.Wait()
-	return nil
-}
 
 // min returns the minimum of two integers
 func min(a, b int) int {
@@ -168,16 +133,51 @@ func Clean() error {
 	return nil
 }
 
+// runTestWithArgs runs Go tests with the specified arguments
+func runTestWithArgs(args []string) error {
+	env := map[string]string{
+		"CGO_ENABLED": "1",
+	}
+	return sh.RunWith(env, "go", args...)
+}
+
+// ensureAndRunLinter ensures golangci-lint is available and runs it
+func ensureAndRunLinter() error {
+	golangciLint := filepath.Join(os.Getenv("GOPATH"), "bin", "golangci-lint")
+	
+	if err := sh.Run(golangciLint, "--version"); err != nil {
+		if err := sh.Run("golangci-lint", "--version"); err != nil {
+			fmt.Println("Installing golangci-lint...")
+			if err := sh.Run("go", "install", "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"); err != nil {
+				return fmt.Errorf("failed to install golangci-lint: %w", err)
+			}
+			return sh.Run(golangciLint, "run", "./...")
+		}
+		return sh.Run("golangci-lint", "run", "./...")
+	}
+	return sh.Run(golangciLint, "run", "./...")
+}
+
+// runModTidyInDir runs go mod tidy in the specified module directory
+func runModTidyInDir(modPath string) error {
+	dir := filepath.Dir(modPath)
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(oldDir)
+	
+	if err := sh.Run("go", "mod", "tidy"); err != nil {
+		return fmt.Errorf("failed to tidy %s: %w", modPath, err)
+	}
+	fmt.Printf("✅ Tidied %s\n", modPath)
+	return nil
+}
+
 // Test runs unit tests for all packages in parallel with coverage
 func Test() error {
 	fmt.Println("🧪 Running unit tests in parallel...")
 	
 	// Run tests with parallel execution, race detection, and coverage
-	env := map[string]string{
-		"CGO_ENABLED": "1", // Required for race detector
-	}
-	
-	args := []string{
+	return runTestWithArgs([]string{
 		"test",
 		"-race",
 		"-parallel", fmt.Sprintf("%d", runtime.NumCPU()),
@@ -185,69 +185,49 @@ func Test() error {
 		"-covermode=atomic",
 		"-v",
 		"./...",
-	}
-	
-	return sh.RunWith(env, "go", args...)
+	})
 }
 
 // TestUnit runs unit tests only (excludes integration tests)
 func TestUnit() error {
 	fmt.Println("🧪 Running unit tests only...")
 	
-	env := map[string]string{
-		"CGO_ENABLED": "1",
-	}
-	
-	args := []string{
+	return runTestWithArgs([]string{
 		"test",
 		"-race",
 		"-parallel", fmt.Sprintf("%d", runtime.NumCPU()),
-		"-short", // Skip integration tests
+		"-short",
 		"-coverprofile=coverage.out",
 		"-covermode=atomic",
 		"-v",
 		"./...",
-	}
-	
-	return sh.RunWith(env, "go", args...)
+	})
 }
 
 // TestContract runs contract tests against Terraform configurations
 func TestContract() error {
 	fmt.Println("🔗 Running contract tests...")
 	
-	env := map[string]string{
-		"CGO_ENABLED": "1",
-	}
-	
-	args := []string{
+	return runTestWithArgs([]string{
 		"test",
 		"-tags", "contract",
 		"-parallel", fmt.Sprintf("%d", runtime.NumCPU()),
 		"-v",
 		"./tests/contract/...",
-	}
-	
-	return sh.RunWith(env, "go", args...)
+	})
 }
 
 // TestE2E runs end-to-end tests against ephemeral infrastructure
 func TestE2E() error {
 	fmt.Println("🌐 Running end-to-end tests...")
 	
-	env := map[string]string{
-		"CGO_ENABLED": "1",
-	}
-	
-	args := []string{
+	return runTestWithArgs([]string{
 		"test",
 		"-tags", "e2e",
-		"-timeout", "30m", // E2E tests can take longer
+		"-timeout", "30m",
 		"-v",
 		"./tests/e2e/...",
-	}
-	
-	return sh.RunWith(env, "go", args...)
+	})
 }
 
 // TestMutation runs mutation testing on all Go modules with 95% threshold
@@ -307,28 +287,7 @@ func TestMutationModule(module string) error {
 func Lint() error {
 	fmt.Println("🔍 Running linters...")
 	
-	// First try the GOPATH/bin location
-	golangciLint := filepath.Join(os.Getenv("GOPATH"), "bin", "golangci-lint")
-	
-	// Check if golangci-lint is available in GOPATH/bin
-	if err := sh.Run(golangciLint, "--version"); err != nil {
-		fmt.Printf("golangci-lint not found in %s, trying system PATH...\n", golangciLint)
-		
-		// Try system PATH
-		if err := sh.Run("golangci-lint", "--version"); err != nil {
-			fmt.Println("golangci-lint not found anywhere, installing latest version...")
-			if err := sh.Run("go", "install", "github.com/golangci/golangci-lint/cmd/golangci-lint@latest"); err != nil {
-				return fmt.Errorf("failed to install golangci-lint: %w", err)
-			}
-			// Use GOPATH version after install
-			return sh.Run(golangciLint, "run", "./...")
-		}
-		// Use system PATH version
-		return sh.Run("golangci-lint", "run", "./...")
-	}
-	
-	// Use GOPATH version
-	return sh.Run(golangciLint, "run", "./...")
+	return ensureAndRunLinter()
 }
 
 // ModTidy runs go mod tidy on all modules
@@ -349,18 +308,10 @@ func ModTidy() error {
 		wg.Add(1)
 		go func(modPath string) {
 			defer wg.Done()
-			
-			dir := filepath.Dir(modPath)
-			oldDir, _ := os.Getwd()
-			os.Chdir(dir)
-			defer os.Chdir(oldDir)
-			
-			if err := sh.Run("go", "mod", "tidy"); err != nil {
+			if err := runModTidyInDir(modPath); err != nil {
 				mu.Lock()
-				errors = append(errors, fmt.Errorf("failed to tidy %s: %w", modPath, err))
+				errors = append(errors, err)
 				mu.Unlock()
-			} else {
-				fmt.Printf("✅ Tidied %s\n", modPath)
 			}
 		}(module)
 	}
@@ -385,7 +336,7 @@ type LambdaFunction struct {
 	Path string
 }
 
-// findLambdaFunctions discovers all Lambda function directories
+// findLambdaFunctions discovers all Lambda function directories in the new plugin architecture
 func findLambdaFunctions() ([]LambdaFunction, error) {
 	var functions []LambdaFunction
 
@@ -399,14 +350,19 @@ func findLambdaFunctions() ([]LambdaFunction, error) {
 			return filepath.SkipDir
 		}
 
-		// Look for main.go files in lambda directories
+		// Look for main.go files in lambda directories within plugins and shared components
+		// Patterns: src/plugins/*/lambda/*/main.go and src/shared/*/lambda/*/main.go
 		if info.Name() == "main.go" && strings.Contains(path, "/lambda/") {
 			dir := filepath.Dir(path)
 			name := filepath.Base(dir)
-			functions = append(functions, LambdaFunction{
-				Name: name,
-				Path: dir,
-			})
+			
+			// Ensure this is actually within a plugin or shared directory structure
+			if strings.Contains(path, "src/plugins/") || strings.Contains(path, "src/shared/") {
+				functions = append(functions, LambdaFunction{
+					Name: name,
+					Path: dir,
+				})
+			}
 		}
 
 		return nil
@@ -419,6 +375,13 @@ func findLambdaFunctions() ([]LambdaFunction, error) {
 func findGoModules() ([]string, error) {
 	var modules []string
 
+	// Since we have consolidated to a single go.mod at the root, just check for that
+	if _, err := os.Stat("go.mod"); err == nil {
+		modules = append(modules, "go.mod")
+		return modules, nil
+	}
+
+	// Fallback: walk the directory tree in case there are still multiple modules
 	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -463,8 +426,12 @@ func findModulesWithTests() ([]string, error) {
 		}
 		
 		// Check if this directory has test files and Go files
+		// Focus on plugin and shared directories
 		if info.IsDir() && hasTests(path) && hasGoFiles(path) {
-			modules = append(modules, path)
+			// Prioritize plugin and shared component directories
+			if strings.Contains(path, "src/plugins/") || strings.Contains(path, "src/shared/") {
+				modules = append(modules, path)
+			}
 		}
 		
 		return nil
@@ -515,7 +482,6 @@ func hasGoFiles(dir string) bool {
 
 // runMutationTests runs mutation testing on multiple modules in parallel
 func runMutationTests(modules []string, outputDir string) error {
-	const mutationThreshold = 95.0
 	
 	// Use worker pool for parallel execution
 	maxWorkers := min(runtime.NumCPU(), len(modules))
@@ -546,7 +512,6 @@ func runMutationTests(modules []string, outputDir string) error {
 
 // runSingleModuleMutation runs mutation testing on a single module
 func runSingleModuleMutation(module, outputDir string) error {
-	const mutationThreshold = 95.0
 	
 	result := runMutationTestOnModule(module, outputDir)
 	
@@ -658,7 +623,7 @@ func runMutationTestOnModule(module, baseOutputDir string) MutationResult {
 	}
 	
 	status := "PASSED"
-	if score < 95.0 {
+	if score < mutationThreshold {
 		status = "FAILED"
 	}
 	

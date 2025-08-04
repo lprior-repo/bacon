@@ -17,7 +17,8 @@
         "{projectRoot}/main",
         "{projectRoot}/dist",
         "{projectRoot}/.aws-sam"
-      ]
+      ],
+      "executor": "nx:run-commands"
     },
     "test": {
       "cache": true,
@@ -27,14 +28,36 @@
       ],
       "outputs": [
         "{projectRoot}/coverage"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test -v -race -short ./...",
+        "cwd": "{projectRoot}"
+      },
+      "configurations": {
+        "root": {
+          "command": "mage testunit",
+          "cwd": "{projectRoot}"
+        }
+      }
     },
     "lint": {
       "cache": true,
       "inputs": [
         "default",
         "{workspaceRoot}/.golangci.yml"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "golangci-lint run ./...",
+        "cwd": "{projectRoot}"
+      },
+      "configurations": {
+        "root": {
+          "command": "mage lint",
+          "cwd": "{projectRoot}"
+        }
+      }
     },
     "mod-tidy": {
       "cache": true,
@@ -44,7 +67,12 @@
       ],
       "outputs": [
         "{projectRoot}/go.sum"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go mod tidy",
+        "cwd": "{projectRoot}"
+      }
     },
     "initialize": {
       "cache": true,
@@ -54,7 +82,12 @@
       "outputs": [
         "{projectRoot}/.terraform",
         "{projectRoot}/.terraform.lock.hcl"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform init",
+        "cwd": "{projectRoot}"
+      }
     },
     "providers": {
       "cache": true,
@@ -63,14 +96,24 @@
       ],
       "outputs": [
         "{projectRoot}/.terraform/providers"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform providers",
+        "cwd": "{projectRoot}"
+      }
     },
     "validate": {
       "cache": true,
       "inputs": [
         "{projectRoot}/**/*.tf",
         "{projectRoot}/**/*.tfvars"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform validate",
+        "cwd": "{projectRoot}"
+      }
     },
     "plan": {
       "cache": true,
@@ -80,14 +123,29 @@
       ],
       "outputs": [
         "{projectRoot}/terraform.tfplan"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform plan -out=terraform.tfplan",
+        "cwd": "{projectRoot}"
+      }
     },
     "apply": {
       "cache": false,
-      "dependsOn": ["plan"]
+      "dependsOn": ["plan"],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform apply terraform.tfplan",
+        "cwd": "{projectRoot}"
+      }
     },
     "destroy": {
-      "cache": false
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform destroy -auto-approve",
+        "cwd": "{projectRoot}"
+      }
     },
     "format": {
       "cache": true,
@@ -96,13 +154,23 @@
       ],
       "outputs": [
         "{projectRoot}/**/*.tf"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform fmt -recursive",
+        "cwd": "{projectRoot}"
+      }
     },
     "format-check": {
       "cache": true,
       "inputs": [
         "{projectRoot}/**/*.tf"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform fmt -check -recursive",
+        "cwd": "{projectRoot}"
+      }
     },
     "security-scan": {
       "cache": true,
@@ -112,7 +180,12 @@
       ],
       "outputs": [
         "{projectRoot}/checkov-report.json"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "checkov -d . --framework terraform --output cli --quiet",
+        "cwd": "{projectRoot}"
+      }
     },
     "terraform-plan": {
       "cache": true,
@@ -122,11 +195,21 @@
       ],
       "outputs": [
         "{projectRoot}/terraform.tfplan"
-      ]
+      ],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform plan -out=terraform.tfplan",
+        "cwd": "{projectRoot}"
+      }
     },
     "terraform-apply": {
       "cache": false,
-      "dependsOn": ["terraform-plan"]
+      "dependsOn": ["terraform-plan"],
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "terraform apply terraform.tfplan",
+        "cwd": "{projectRoot}"
+      }
     },
     "test-mutation": {
       "cache": true,
@@ -175,6 +258,9 @@
     ]
   },
   "plugins": [],
+  "workspaceLayout": {
+    "projectNameAndRootFormat": "as-provided"
+  },
   "cli": {
     "analytics": false
   },

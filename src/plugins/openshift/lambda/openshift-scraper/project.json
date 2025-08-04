@@ -1,0 +1,17 @@
+{
+  "name": "openshift-scraper",
+  "root": "src/plugins/openshift/lambda/openshift-scraper",
+  "projectType": "application",
+  "tags": [
+    "scope:plugins",
+    "type:lambda",
+    "platform:go",
+    "openshift"
+  ],
+  "targets": {
+    "build": {},
+    "test": {},
+    "lint": {},
+    "mod-tidy": {}
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "github-scraper",
+  "root": "src/plugins/github/lambda/github-scraper",
+  "projectType": "application",
+  "tags": [
+    "scope:plugins",
+    "type:lambda",
+    "platform:go",
+    "github"
+  ],
+  "targets": {
+    "build": {
+      "options": {
+        "command": "CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-s -w -buildid=' -trimpath -buildvcs=false -o main .",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "test": {},
+    "lint": {},
+    "mod-tidy": {}
+  }
+}

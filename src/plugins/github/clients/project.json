@@ -1,0 +1,19 @@
+{
+  "name": "github-clients",
+  "root": "src/plugins/github/clients",
+  "projectType": "library",
+  "tags": [
+    "scope:plugins",
+    "type:library",
+    "platform:go",
+    "github"
+  ],
+  "targets": {
+    "build": {},
+    "test": {},
+    "lint": {},
+    "mod-tidy": {},
+    "test-mutation": {},
+    "test-mutation-module": {}
+  }
+}

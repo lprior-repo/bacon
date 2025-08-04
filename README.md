@@ -1,184 +1,423 @@
-# Beacon Infrastructure
+# Bacon: AWS Serverless Infrastructure Discovery Platform
 
-This directory contains the core Terraform configuration files for the Beacon project infrastructure on AWS.
+**A Domain-Driven Design (DDD) microservices platform for comprehensive AWS infrastructure discovery and analysis**
 
 ## Overview
 
-The Beacon project infrastructure is designed to be deployed in existing AWS VPCs using private subnets for security and cost optimization. The configuration follows AWS and Terraform best practices with modular, reusable components.
+Bacon is a serverless AWS infrastructure discovery and analysis platform designed to provide comprehensive visibility into multi-cloud environments. The system aggregates data from GitHub repositories, DataDog metrics, OpenShift clusters, and AWS resources to create a unified ownership and relationship graph stored in Amazon Neptune.
+
+The platform follows Domain-Driven Design (DDD) principles with a plugin-based architecture, where each integration is completely self-contained and independent.
 
 ## Architecture
 
+### DDD Plugin-Based Architecture
+
+Bacon uses a **Domain-Driven Design (DDD)** approach with a plugin-based architecture that provides:
+
+- **Plugin Isolation**: Each third-party integration is completely self-contained
+- **Shared Components**: Common functionality is centralized in shared modules
+- **Single Build System**: Consolidated nx.json + Mage for unified builds
+- **Single Go Module**: All modules consolidated into one go.mod file
+- **Clear Boundaries**: Each plugin represents a bounded context
+
+### Core Components
+
 - **Compute**: AWS Lambda functions for serverless processing
-- **Orchestration**: AWS Step Functions for workflow management
+- **Orchestration**: AWS Step Functions for workflow management  
 - **Storage**: Amazon S3 for data storage, DynamoDB for state management
-- **Networking**: Existing VPC with private subnets for secure deployment
+- **Graph Database**: Amazon Neptune for relationship storage
+- **API**: GraphQL API via AWS AppSync for flexible querying
+- **Networking**: VPC with private subnets for secure deployment
 - **Monitoring**: CloudWatch for logging and monitoring
 
-## Files Structure
+## Project Structure
 
 ```
-beacon-infra/
-├── providers.tf              # Provider configuration and versions
-├── variables.tf              # Input variables with validation
-├── locals.tf                 # Local values and computed resources
-├── main.tf                   # Data sources and main configuration
-├── outputs.tf                # Output values
-├── modules-examples.tf       # terraform-aws-modules examples (commented)
-├── terraform.tfvars.example  # Example variable values
-└── README.md                 # This file
+bacon/
+├── src/
+│   ├── plugins/                    # 3rd party integrations (DDD bounded contexts)
+│   │   ├── github/                # GitHub integration plugin
+│   │   │   ├── clients/           # GitHub API clients
+│   │   │   ├── lambda/            # GitHub Lambda functions
+│   │   │   │   ├── github-scraper/
+│   │   │   │   └── codeowners-scraper/
+│   │   │   ├── parsers/           # GitHub-specific parsers
+│   │   │   ├── types/             # GitHub domain types
+│   │   │   └── project.json       # NX project configuration
+│   │   ├── datadog/               # DataDog integration plugin
+│   │   │   ├── clients/           # DataDog API clients
+│   │   │   ├── lambda/            # DataDog Lambda functions
+│   │   │   │   └── datadog-scraper/
+│   │   │   ├── types/             # DataDog domain types
+│   │   │   └── project.json       # NX project configuration
+│   │   └── openshift/             # OpenShift integration plugin
+│   │       ├── clients/           # OpenShift/K8s API clients
+│   │       ├── lambda/            # OpenShift Lambda functions
+│   │       │   └── openshift-scraper/
+│   │       ├── types/             # OpenShift domain types
+│   │       └── project.json       # NX project configuration
+│   └── shared/                    # Shared components across plugins
+│       ├── api/                   # GraphQL API and resolvers
+│       │   ├── resolvers/         # GraphQL resolvers
+│       │   │   ├── query/         # Query resolvers
+│       │   │   └── mutation/      # Mutation resolvers
+│       │   └── schemas/           # GraphQL schemas
+│       ├── relationship-finding/   # Core relationship discovery logic
+│       ├── aws.go                 # AWS SDK utilities
+│       ├── functional.go          # Functional programming utilities
+│       ├── response.go            # HTTP response utilities
+│       ├── testing.go             # Test utilities
+│       ├── tracing.go             # X-Ray tracing utilities
+│       └── project.json           # NX project configuration
+├── terraform/                     # Infrastructure as Code
+├── tests/                         # Test suites
+│   ├── contract/                  # Contract tests
+│   ├── e2e/                       # End-to-end tests
+│   └── unit/                      # Unit tests
+├── go.mod                         # Single Go module for entire project
+├── nx.json                        # NX workspace configuration
+├── magefile.go                    # Mage build system
+└── package.json                   # Node.js dependencies and scripts
 ```
+
+## DDD Principles Applied
+
+### 1. Bounded Contexts
+Each plugin represents a bounded context with:
+- **Clear domain boundaries**: GitHub, DataDog, and OpenShift are separate domains
+- **Independent models**: Each plugin has its own types and business logic
+- **Autonomous evolution**: Plugins can evolve independently
+
+### 2. Plugin Self-Containment
+Each plugin includes:
+- **Domain-specific clients**: API clients for the external service
+- **Business logic**: Lambda functions implementing domain operations  
+- **Types**: Domain-specific data structures
+- **Tests**: Comprehensive test coverage including property-based tests
+
+### 3. Shared Kernel
+The `src/shared/` directory contains:
+- **Common utilities**: AWS SDK helpers, tracing, testing utilities
+- **API layer**: GraphQL API serving all plugins
+- **Relationship finding**: Core cross-domain relationship discovery
+
+## Build System
+
+### Mage + NX Hybrid Approach
+
+The project uses a hybrid build system combining:
+- **Mage**: Fast, parallel builds of Go Lambda functions
+- **NX**: Intelligent caching and affected builds for the entire workspace
+
+#### Available Commands
+
+**Mage Commands** (Go-specific):
+```bash
+# Build all Lambda functions in parallel
+mage build
+
+# Run full CI pipeline  
+mage ci
+
+# Clean build artifacts
+mage clean
+
+# Run tests with mutation testing (95%+ coverage required)
+mage test
+mage testmutation
+
+# Run linting
+mage lint
+
+# Tidy Go modules
+mage modtidy
+```
+
+**NPM/NX Commands** (Workspace-wide):
+```bash
+# Build all projects using NX
+npm run build
+
+# Test all projects  
+npm run test
+
+# Lint all projects
+npm run lint
+
+# Clean all projects
+npm run clean
+```
+
+### Automatic Discovery
+
+The build system automatically discovers:
+
+**Lambda Functions**: 
+- `src/plugins/*/lambda/*/main.go`
+- `src/shared/*/lambda/*/main.go` (if any)
+
+**Go Modules**: All `go.mod` files (consolidated to root)
+
+**NX Projects**: All `project.json` files in plugin and shared directories
+
+## Development Workflow
+
+### 1. Plugin Development
+When adding a new integration:
+
+1. **Create plugin directory**: `src/plugins/{service-name}/`
+2. **Add domain components**:
+   - `clients/` - API client for external service
+   - `lambda/` - Lambda function implementations
+   - `types/` - Domain-specific types
+   - `project.json` - NX project configuration
+3. **Implement Lambda functions** with proper error handling and tracing
+4. **Add comprehensive tests** including property-based testing
+5. **Update terraform** to deploy new Lambda functions
+
+### 2. Shared Component Development
+When modifying shared components:
+
+1. **Consider impact** across all plugins
+2. **Maintain backward compatibility** where possible
+3. **Update all affected tests**
+4. **Run full mutation testing** to ensure coverage
+
+### 3. Testing Strategy
+
+**Unit Tests**: Each plugin and shared component has comprehensive unit tests
+
+**Property-Based Tests**: Using `pgregory.net/rapid` for robust testing
+
+**Mutation Tests**: 95%+ mutation testing coverage requirement
+
+**Contract Tests**: API contract testing for external integrations
+
+**E2E Tests**: Full pipeline testing with ephemeral infrastructure
 
 ## Prerequisites
 
-1. **Terraform**: Version >= 1.0
-2. **AWS CLI**: Configured with appropriate credentials
-3. **Existing Infrastructure**:
-   - VPC with private subnets
-   - At least 2 private subnets in different AZs for high availability
+### Required Tools
+1. **Go**: Version 1.24.5 or later
+2. **Node.js**: Version 20 or later  
+3. **Mage**: `go install github.com/magefile/mage@latest`
+4. **Terraform**: Version 1.0 or later
+5. **AWS CLI**: Configured with appropriate credentials
+
+### AWS Infrastructure
+- VPC with private subnets
+- At least 2 private subnets in different AZs for high availability
+- NAT Gateway for Lambda internet access
+- IAM roles and policies for Lambda execution
 
 ## Configuration
 
-### Required Variables
+### Environment Variables
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `env` | Environment name | `"dev"` |
-| `aws_region` | AWS region | `"us-east-1"` |
-| `project_name` | Project name | `"beacon"` |
-| `existing_vpc_id` | Existing VPC ID | `"vpc-0123456789abcdef0"` |
-| `existing_private_subnet_ids` | Private subnet IDs | `["subnet-0123abc", "subnet-4567def"]` |
+| `AWS_REGION` | AWS region | `us-east-1` |
+| `ENV` | Environment name | `dev`/`staging`/`prod` |
+| `PROJECT_NAME` | Project name | `bacon` |
+| `VPC_ID` | Existing VPC ID | `vpc-0123456789abcdef0` |
+| `PRIVATE_SUBNET_IDS` | Private subnet IDs | `subnet-0123abc,subnet-4567def` |
 
-### Setup
+### Setup Steps
 
-1. **Copy the example variables file**:
+1. **Clone repository**:
    ```bash
-   cp terraform.tfvars.example terraform.tfvars
+   git clone <repository-url>
+   cd bacon
    ```
 
-2. **Edit terraform.tfvars** with your actual values:
-   ```hcl
-   env          = "dev"
-   aws_region   = "us-east-1"
-   project_name = "beacon"
+2. **Install dependencies**:
+   ```bash
+   npm install
+   go mod download
+   ```
+
+3. **Configure Terraform variables**:
+   ```bash
+   cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+   # Edit terraform.tfvars with your values
+   ```
+
+4. **Build and test**:
+   ```bash
+   # Build all Lambda functions
+   mage build
    
-   existing_vpc_id = "vpc-your-actual-vpc-id"
-   existing_private_subnet_ids = [
-     "subnet-your-subnet-1",
-     "subnet-your-subnet-2"
-   ]
+   # Run all tests
+   mage test
+   
+   # Run mutation tests (95%+ coverage required)
+   mage testmutation
    ```
 
-3. **Initialize Terraform**:
+5. **Deploy infrastructure**:
    ```bash
+   cd terraform
    terraform init
-   ```
-
-4. **Validate the configuration**:
-   ```bash
-   terraform validate
-   ```
-
-5. **Plan the deployment**:
-   ```bash
    terraform plan
-   ```
-
-6. **Apply the configuration**:
-   ```bash
    terraform apply
    ```
 
-## Usage with terraform-aws-modules
+## API Usage
 
-The `modules-examples.tf` file contains commented examples of how to use popular terraform-aws-modules for:
+### GraphQL Endpoint
 
-- **S3 Bucket**: `terraform-aws-modules/s3-bucket/aws`
-- **Lambda Function**: `terraform-aws-modules/lambda/aws`
-- **Security Groups**: `terraform-aws-modules/security-group/aws`
-- **DynamoDB Table**: `terraform-aws-modules/dynamodb-table/aws`
-- **IAM Roles**: `terraform-aws-modules/iam/aws`
+The platform provides a GraphQL API for querying infrastructure data:
 
-To use these modules, uncomment the relevant sections in `modules-examples.tf` and customize as needed.
-
-## Naming Convention
-
-All resources follow a consistent naming pattern:
-- **Format**: `{project_name}-{env}-{resource_type}`
-- **Example**: `beacon-dev-lambda`
-
-## Tagging Strategy
-
-All resources are tagged with:
-- `Project`: Project name
-- `Environment`: Environment (dev/staging/prod)
-- `ManagedBy`: "terraform"
-- `CreatedAt`: Timestamp of creation
-
-## Outputs
-
-The configuration provides the following outputs:
-
-- VPC and networking information
-- Common tags and naming patterns
-- Derived resource names
-- AWS account and region information
-
-## Security Considerations
-
-- All resources are deployed in private subnets
-- S3 buckets use server-side encryption
-- IAM roles follow least privilege principle
-- Security groups restrict access appropriately
-
-## Best Practices Implemented
-
-1. **Modularity**: Separate files for different concerns
-2. **Validation**: Input validation for all variables
-3. **Consistency**: Common naming and tagging patterns
-4. **Security**: Private networking and encryption
-5. **Maintainability**: Clear documentation and examples
-
-## Pipeline Variables
-
-This configuration is designed to work with CI/CD pipelines using these variables:
-
-```yaml
-env: "dev"
-aws_region: "us-east-1"
-project_name: "beacon"
-existing_vpc_id: "vpc-0123456789abcdef0"
-existing_private_subnet_ids: ["subnet-0123abc", "subnet-4567def"]
+```graphql
+query GetResourcesByOwner($teamId: ID!) {
+  resourcesByOwner(teamId: $teamId) {
+    id
+    type
+    name
+    owners {
+      name
+      members
+    }
+    relationships {
+      type
+      target {
+        id
+        name
+      }
+    }
+    lastUpdated
+  }
+}
 ```
+
+### Common Queries
+
+**Find all resources owned by a team**:
+```graphql
+query ResourcesByTeam($teamId: ID!) {
+  resourcesByOwner(teamId: $teamId) {
+    id
+    name
+    type
+    tags
+  }
+}
+```
+
+**Discover relationship paths**:
+```graphql  
+query RelationshipPath($from: ID!, $to: ID!) {
+  relationshipPath(from: $from, to: $to) {
+    id
+    name
+    type
+  }
+}
+```
+
+## Monitoring & Observability
+
+### Multi-Layer Monitoring
+
+1. **Infrastructure**: CloudWatch dashboards for Lambda, Neptune, EventBridge
+2. **Application**: X-Ray distributed tracing, custom metrics, structured logging
+3. **Business**: Data freshness, resource discovery coverage, API usage patterns
+
+### Key Metrics
+
+| Metric | Target | Description |
+|--------|--------|-------------|
+| API Response Time | <200ms (p95) | GraphQL query performance |
+| Resource Discovery Coverage | >95% | Percentage of resources discovered |
+| Data Freshness | <5 minutes | Time from source update to availability |
+| System Availability | 99.9% | Overall platform availability |
+| Mutation Test Coverage | 95%+ | Code quality assurance |
+
+## Security
+
+### Multi-Layer Security
+
+1. **Network**: VPC isolation, private subnets, security groups
+2. **Identity**: IAM roles with least privilege, cross-account access
+3. **Data**: Encryption at rest and in transit, Secrets Manager
+4. **Application**: Static analysis, dependency scanning, runtime monitoring
+
+### Compliance Features
+
+- **Audit Trail**: All data mutations logged to CloudTrail
+- **Encryption**: AES-256 encryption for all stored data
+- **Access Control**: Resource-based IAM policies
+- **Monitoring**: Real-time security event monitoring
+
+## Contributing
+
+### Code Standards
+
+- **Functional Programming**: Pure functions, immutable data structures
+- **DDD Principles**: Clear domain boundaries, bounded contexts
+- **Test Coverage**: 95%+ mutation testing coverage required
+- **Documentation**: All public APIs documented
+- **Security**: Static analysis and dependency scanning
+
+### Pull Request Process
+
+1. Create feature branch from `main`
+2. Implement changes following DDD principles
+3. Add comprehensive tests (unit, property-based, contract)
+4. Run full test suite: `mage ci`
+5. Update documentation as needed
+6. Submit pull request with clear description
+
+### Plugin Development Guidelines
+
+When creating new plugins:
+
+1. **Follow DDD patterns**: Clear bounded contexts, domain-specific types
+2. **Implement proper error handling**: Graceful degradation, retry logic
+3. **Add comprehensive testing**: Unit, integration, property-based tests
+4. **Document API contracts**: Clear interfaces and expected behaviors
+5. **Consider performance**: Connection pooling, caching, async patterns
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **VPC/Subnet Not Found**:
-   - Verify the VPC ID and subnet IDs exist in your AWS account
-   - Ensure you have proper AWS credentials configured
-
-2. **Permission Errors**:
-   - Check that your AWS credentials have sufficient permissions
-   - Review IAM policies for Terraform deployment
-
-3. **Validation Errors**:
-   - Run `terraform validate` to check syntax
-   - Ensure all required variables are provided
+1. **Build Failures**: Check Go version (1.24.5+) and run `mage clean && mage build`
+2. **Test Failures**: Ensure AWS credentials configured for integration tests
+3. **Neptune Connection**: Verify VPC configuration and security groups
+4. **Permission Errors**: Check IAM roles and policies for Lambda functions
 
 ### Support
 
 For issues and questions:
-1. Check the Terraform validation output
-2. Review AWS CloudFormation events if resources fail to create
-3. Verify variable values in `terraform.tfvars`
+1. Check build system output: `mage build -v`
+2. Review CloudWatch logs for Lambda functions
+3. Verify Terraform state and resources
+4. Run health checks: API Gateway, Neptune cluster status
 
-## Contributing
+## Roadmap
 
-When modifying this configuration:
+### Phase 2 (Q2 2025)
+- **Machine Learning**: Anomaly detection for resource patterns
+- **Real-time Streaming**: Kinesis integration for sub-second updates
+- **Advanced Analytics**: Athena/QuickSight business intelligence
+- **Multi-Cloud Support**: Azure and GCP resource discovery
 
-1. Follow the established naming conventions
-2. Add appropriate validation to new variables
-3. Update documentation for new features
-4. Test changes with `terraform plan` before applying
-5. Keep the configuration DRY and modular
+### Phase 3 (Q3-Q4 2025)  
+- **AI-Powered Insights**: Natural language query processing
+- **Predictive Analytics**: Cost and capacity forecasting
+- **Automation Platform**: Resource lifecycle management
+- **Edge Computing**: Regional data processing for global deployments
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+## Technical Architecture
+
+For detailed technical architecture, implementation patterns, and design decisions, see:
+- [DESIGN.md](./DESIGN.md) - Comprehensive technical design document
+- [BUILD_SYSTEM.md](./BUILD_SYSTEM.md) - Build system documentation
+- [terraform/README.md](./terraform/README.md) - Infrastructure deployment guide

@@ -1,0 +1,17 @@
+{
+  "name": "codeowners-scraper",
+  "root": "src/plugins/github/lambda/codeowners-scraper",
+  "projectType": "application",
+  "tags": [
+    "scope:plugins",
+    "type:lambda",
+    "platform:go",
+    "github"
+  ],
+  "targets": {
+    "build": {},
+    "test": {},
+    "lint": {},
+    "mod-tidy": {}
+  }
+}
