@@ -24,6 +24,18 @@ This repository follows a **vertical slice architecture** with extreme DRY princ
 - **Composable design** - functions can be easily combined and tested
 - **Immutable data structures** where possible
 
+### 4. AWS Serverless Architecture
+- **Lambda Functions**: Single responsibility, pure functional design
+- **Step Functions**: Orchestrate complex workflows without local concurrency
+- **EventBridge/CloudWatch**: Event-driven triggers for data processing
+- **No Local Concurrency**: AWS handles all scaling and parallel execution
+
+### 5. Functional Programming with samber/lo
+- **Mandatory samber/lo Usage**: All data transformations use lo.Map, lo.Filter, lo.Reduce
+- **Zero Imperative Loops**: No for/while loops in business logic
+- **Pure Transformation Functions**: All data processing functions are side-effect free
+- **Native Go Error Handling**: Standard Go error propagation patterns
+
 ## Directory Structure
 
 ```
@@ -41,8 +53,13 @@ bacon/
 │   │   ├── datadog/                 # Datadog integration domain
 │   │   │   ├── types/               # Datadog-specific types
 │   │   │   ├── clients/             # Datadog API clients  
-│   │   │   └── lambda/              # Datadog Lambda functions
-│   │   │       └── datadog-scraper/
+│   │   │   ├── shared/              # Shared functional utilities
+│   │   │   └── lambda/              # Datadog Lambda functions (AWS Serverless)
+│   │   │       ├── datadog-teams-scraper/     # Teams API v2 scraper
+│   │   │       ├── datadog-users-scraper/     # Users API v2 scraper
+│   │   │       ├── datadog-services-scraper/  # Service Catalog API v2 scraper
+│   │   │       ├── datadog-organizations-scraper/ # Organizations API v2 scraper
+│   │   │       └── datadog-orchestrator/      # Step Functions orchestrator
 │   │   └── openshift/               # OpenShift integration domain
 │   │       ├── types/               # OpenShift-specific types
 │   │       ├── clients/             # OpenShift API clients
@@ -375,3 +392,44 @@ This repository uses **Mage as the single source of truth** for all build, test,
 - `mage clean` - Clean all artifacts
 
 **Never use shell scripts, NX commands directly, or manual go commands. Always use Mage.**
+
+## Datadog Plugin AWS Serverless Architecture
+
+### Lambda Functions (Single Responsibility)
+Each Datadog Lambda function scrapes one specific Datadog API v2 endpoint using pure functional programming:
+
+- **datadog-teams-scraper/** - Teams API v2 endpoint scraping
+- **datadog-users-scraper/** - Users API v2 endpoint scraping  
+- **datadog-services-scraper/** - Service Catalog API v2 endpoint scraping
+- **datadog-organizations-scraper/** - Organizations API v2 endpoint scraping
+- **datadog-orchestrator/** - Step Function orchestration Lambda
+
+### Functional Programming Requirements
+- **samber/lo Mandatory**: All data transformations must use lo.Map, lo.Filter, lo.Reduce
+- **No Imperative Loops**: Zero for/while loops in business logic
+- **Pure Functions Only**: No side effects in transformation logic
+- **Immutable Data**: All data structures immutable with functional updates
+- **Native Go Errors**: Standard error propagation patterns
+- **Single Responsibility**: Each Lambda handles one API endpoint
+
+### Architecture Pattern
+```
+EventBridge/CloudWatch → Orchestrator Lambda → Step Functions → Parallel Lambda Execution
+                                                              ↓
+                                     Teams/Users/Services/Orgs Scrapers → DynamoDB
+```
+
+### Datadog API v2 Integration
+- **Teams API**: Complete team structure, membership, and relationships
+- **Users API**: User-team associations, roles, and organizational structure
+- **Service Catalog API**: Service-team ownership mappings and metadata
+- **Organizations API**: Organizational hierarchy and configuration
+
+### Data Flow Architecture
+1. **Trigger**: EventBridge or CloudWatch event triggers orchestrator
+2. **Orchestration**: Step Functions coordinate parallel Lambda execution
+3. **Processing**: Each Lambda uses pure functions with samber/lo transformations
+4. **Storage**: Results stored in DynamoDB with proper indexing
+5. **Relationships**: Team-user-service mappings built functionally
+
+All functions follow the established functional programming patterns with samber/lo and maintain pure, composable design.
