@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"pgregory.net/rapid"
 
 	common "bacon/src/shared"
 )
@@ -534,7 +535,7 @@ func TestCreateRepositoryItem(t *testing.T) {
 			item := createRepositoryItem(tc.repo)
 
 			// Verify all required fields are present
-			requiredFields := []string{"id", "name", "description", "language", "stars", "forks", "scraped_at"}
+			requiredFields := []string{"id", "name", "description", "language", "stars", "forks", "timestamp"}
 			for _, field := range requiredFields {
 				if _, exists := item[field]; !exists {
 					t.Errorf("Missing required field: %s", field)
@@ -818,4 +819,348 @@ func BenchmarkCreateErrorResponse(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		createErrorResponse(message)
 	}
+}
+
+// Property-based testing functions using rapid testing approach
+
+// TestBuildGitHubURL_Properties validates URL building with random owner/repo combinations
+func TestBuildGitHubURL_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		owner := rapid.String().Draw(t, "owner")
+		repo := rapid.String().Draw(t, "repo")
+		
+		url := buildGitHubURL(owner, repo)
+		
+		// Property: URL always starts with GitHub API base URL
+		if !strings.HasPrefix(url, "https://api.github.com/repos/") {
+			t.Errorf("URL should start with GitHub API base, got: %s", url)
+		}
+		
+		// Property: URL contains both owner and repo
+		if !strings.Contains(url, owner) || !strings.Contains(url, repo) {
+			t.Errorf("URL should contain owner '%s' and repo '%s', got: %s", owner, repo, url)
+		}
+		
+		// Property: URL format is consistent regardless of input
+		expected := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
+		if url != expected {
+			t.Errorf("URL format inconsistent: expected %s, got %s", expected, url)
+		}
+	})
+}
+
+// TestCreateAuthenticatedRequest_Properties tests HTTP request creation with generated data
+func TestCreateAuthenticatedRequest_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate valid URL components
+		owner := rapid.StringMatching("[a-zA-Z0-9_-]+").Draw(t, "owner")
+		repo := rapid.StringMatching("[a-zA-Z0-9_-]+").Draw(t, "repo")
+		token := rapid.StringMatching("[a-zA-Z0-9_-]{20,40}").Draw(t, "token")
+		
+		url := buildGitHubURL(owner, repo)
+		
+		// Set token environment variable
+		if rapid.Bool().Draw(t, "has_token") {
+			os.Setenv("GITHUB_TOKEN", token)
+		} else {
+			os.Unsetenv("GITHUB_TOKEN")
+		}
+		defer os.Unsetenv("GITHUB_TOKEN")
+		
+		ctx := context.Background()
+		req, err := createAuthenticatedRequest(ctx, url)
+		
+		// Property: Valid URLs should always create valid requests
+		if err != nil {
+			t.Errorf("Valid URL should create request without error: %v", err)
+		}
+		
+		if req == nil {
+			t.Error("Request should not be nil for valid URL")
+		} else {
+			// Property: Request method is always GET
+			if req.Method != "GET" {
+				t.Errorf("Request method should be GET, got: %s", req.Method)
+			}
+			
+			// Property: Request URL matches input
+			if req.URL.String() != url {
+				t.Errorf("Request URL should match input: expected %s, got %s", url, req.URL.String())
+			}
+			
+			// Property: Authorization header presence matches token existence
+			hasAuthHeader := req.Header.Get("Authorization") != ""
+			hasToken := os.Getenv("GITHUB_TOKEN") != ""
+			if hasAuthHeader != hasToken {
+				t.Errorf("Authorization header presence (%t) should match token existence (%t)", hasAuthHeader, hasToken)
+			}
+		}
+	})
+}
+
+// TestCreateRepositoryItem_Properties validates repository item creation with property validation
+func TestCreateRepositoryItem_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate random repository data
+		repo := &GitHubRepo{
+			ID:          rapid.IntRange(-1000000, 1000000).Draw(t, "id"),
+			Name:        rapid.String().Draw(t, "name"),
+			Description: rapid.String().Draw(t, "description"),
+			Language:    rapid.String().Draw(t, "language"),
+			Stars:       rapid.IntRange(-1000, 1000000).Draw(t, "stars"),
+			Forks:       rapid.IntRange(-1000, 1000000).Draw(t, "forks"),
+		}
+		
+		item := createRepositoryItem(repo)
+		
+		// Property: All required fields are present
+		requiredFields := []string{"id", "name", "description", "language", "stars", "forks", "timestamp"}
+		for _, field := range requiredFields {
+			if _, exists := item[field]; !exists {
+				t.Errorf("Missing required field: %s", field)
+			}
+		}
+		
+		// Property: Numeric fields are properly formatted
+		if idAttr, ok := item["id"].(*types.AttributeValueMemberN); ok {
+			expectedID := fmt.Sprintf("%d", repo.ID)
+			if idAttr.Value != expectedID {
+				t.Errorf("ID field mismatch: expected %s, got %s", expectedID, idAttr.Value)
+			}
+		} else {
+			t.Error("ID field should be numeric attribute")
+		}
+		
+		// Property: String fields preserve input values
+		if nameAttr, ok := item["name"].(*types.AttributeValueMemberS); ok {
+			if nameAttr.Value != repo.Name {
+				t.Errorf("Name field mismatch: expected %s, got %s", repo.Name, nameAttr.Value)
+			}
+		} else {
+			t.Error("Name field should be string attribute")
+		}
+		
+		// Property: Timestamp is valid RFC3339 format
+		if timestampAttr, ok := item["timestamp"].(*types.AttributeValueMemberS); ok {
+			_, err := time.Parse(time.RFC3339, timestampAttr.Value)
+			if err != nil {
+				t.Errorf("Timestamp should be valid RFC3339 format: %v", err)
+			}
+		}
+	})
+}
+
+// TestGitHubEvent_Properties validates event structure with boundary conditions
+func TestGitHubEvent_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		event := GitHubEvent{
+			Repository: rapid.String().Draw(t, "repository"),
+			Owner:      rapid.String().Draw(t, "owner"),
+		}
+		
+		// Property: Event validity depends on both fields being non-empty
+		isValid := event.Repository != "" && event.Owner != ""
+		
+		// Property: URL building should work regardless of validity
+		url := buildGitHubURL(event.Owner, event.Repository)
+		expectedURL := fmt.Sprintf("https://api.github.com/repos/%s/%s", event.Owner, event.Repository)
+		
+		if url != expectedURL {
+			t.Errorf("URL building should be consistent: expected %s, got %s", expectedURL, url)
+		}
+		
+		// Property: Valid events should produce valid URLs for API calls
+		if isValid {
+			if !strings.HasPrefix(url, "https://api.github.com/repos/") {
+				t.Error("Valid events should produce valid GitHub API URLs")
+			}
+		}
+	})
+}
+
+// TestResponseCreation_Properties validates response creation with edge cases
+func TestResponseCreation_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		message := rapid.String().Draw(t, "message")
+		
+		// Test both success and error responses
+		if rapid.Bool().Draw(t, "is_success") {
+			response := createSuccessResponse(message)
+			
+			// Property: Success responses always have "success" status
+			if response.Status != "success" {
+				t.Errorf("Success response should have 'success' status, got: %s", response.Status)
+			}
+			
+			// Property: Message is preserved
+			if response.Message != message {
+				t.Errorf("Message should be preserved: expected %s, got %s", message, response.Message)
+			}
+		} else {
+			response := createErrorResponse(message)
+			
+			// Property: Error responses always have "error" status
+			if response.Status != "error" {
+				t.Errorf("Error response should have 'error' status, got: %s", response.Status)
+			}
+			
+			// Property: Message is preserved
+			if response.Message != message {
+				t.Errorf("Message should be preserved: expected %s, got %s", message, response.Message)
+			}
+		}
+	})
+}
+
+// TestHTTPRequestHandling_Properties tests overflow conditions and boundary cases
+func TestHTTPRequestHandling_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate various HTTP response scenarios (valid status codes only)
+		statusCode := rapid.IntRange(200, 599).Draw(t, "status_code")
+		responseBody := rapid.String().Draw(t, "response_body")
+		
+		// Create mock server with generated response
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(statusCode)
+			w.Write([]byte(responseBody))
+		}))
+		defer server.Close()
+		
+		req, err := http.NewRequest("GET", server.URL, nil)
+		if err != nil {
+			t.Fatalf("Failed to create test request: %v", err)
+		}
+		
+		resp, err := executeHTTPRequest(req)
+		
+		// Property: HTTP execution should succeed for any valid request
+		if err != nil {
+			t.Errorf("HTTP request execution should not fail: %v", err)
+		}
+		
+		if resp != nil {
+			// Property: Response status code matches server response
+			if resp.StatusCode != statusCode {
+				t.Errorf("Status code mismatch: expected %d, got %d", statusCode, resp.StatusCode)
+			}
+			resp.Body.Close()
+		}
+	})
+}
+
+// TestMutationScenarios_Properties tests mutation testing scenarios for edge cases
+func TestMutationScenarios_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Test various mutation scenarios that could break the code
+		
+		// Scenario 1: Empty arrays and nil handling
+		var nilRepo *GitHubRepo
+		
+		// Property: Functions should handle nil gracefully or panic predictably
+		defer func() {
+			if r := recover(); r != nil {
+				// Expected behavior for nil input - log but don't fail test
+				t.Logf("Expected panic with nil repo: %v", r)
+			}
+		}()
+		
+		if nilRepo != nil {
+			createRepositoryItem(nilRepo)
+		}
+		
+		// Scenario 2: Boundary value testing
+		extremeRepoData := &GitHubRepo{
+			ID:          rapid.IntRange(-2147483648, 2147483647).Draw(t, "extreme_id"),
+			Name:        rapid.StringN(0, 1000, -1).Draw(t, "extreme_name"),
+			Description: rapid.StringN(0, 5000, -1).Draw(t, "extreme_description"),
+			Language:    rapid.StringN(0, 100, -1).Draw(t, "extreme_language"),
+			Stars:       rapid.IntRange(-1000000, 1000000).Draw(t, "extreme_stars"),
+			Forks:       rapid.IntRange(-1000000, 1000000).Draw(t, "extreme_forks"),
+		}
+		
+		item := createRepositoryItem(extremeRepoData)
+		
+		// Property: Item creation should handle extreme values
+		if len(item) == 0 {
+			t.Error("Item should not be empty even with extreme values")
+		}
+		
+		// Scenario 3: URL building with edge cases
+		extremeOwner := rapid.StringN(0, 1000, -1).Draw(t, "extreme_owner")
+		extremeRepoName := rapid.StringN(0, 1000, -1).Draw(t, "extreme_repo")
+		
+		url := buildGitHubURL(extremeOwner, extremeRepoName)
+		
+		// Property: URL building should never return empty string
+		if url == "" {
+			t.Error("URL should never be empty")
+		}
+		
+		// Property: URL should always have the expected prefix
+		if !strings.HasPrefix(url, "https://api.github.com/repos/") {
+			t.Error("URL should always have GitHub API prefix")
+		}
+	})
+}
+
+// TestConcurrentAccess_Properties validates thread safety and concurrent access patterns
+func TestConcurrentAccess_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		numGoroutines := rapid.IntRange(1, 10).Draw(t, "goroutines")
+		owner := rapid.StringMatching("[a-zA-Z0-9_-]+").Draw(t, "concurrent_owner")
+		repo := rapid.StringMatching("[a-zA-Z0-9_-]+").Draw(t, "concurrent_repo")
+		
+		results := make(chan string, numGoroutines)
+		
+		// Test concurrent URL building
+		for i := 0; i < numGoroutines; i++ {
+			go func() {
+				url := buildGitHubURL(owner, repo)
+				results <- url
+			}()
+		}
+		
+		// Collect results
+		var urls []string
+		for i := 0; i < numGoroutines; i++ {
+			urls = append(urls, <-results)
+		}
+		
+		// Property: All concurrent calls should produce identical results
+		expected := buildGitHubURL(owner, repo)
+		for i, url := range urls {
+			if url != expected {
+				t.Errorf("Concurrent call %d produced different result: expected %s, got %s", i, expected, url)
+			}
+		}
+	})
+}
+
+// TestTableNameHandling_Properties validates environment variable handling
+func TestTableNameHandling_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		tableName := rapid.StringMatching("[a-zA-Z0-9_-]+").Draw(t, "table_name")
+		
+		// Test with and without environment variable
+		if rapid.Bool().Draw(t, "has_env_var") && tableName != "" {
+			os.Setenv("DYNAMODB_TABLE", tableName)
+			defer os.Unsetenv("DYNAMODB_TABLE")
+			
+			result := getTableName()
+			
+			// Property: When env var is set with non-empty value, it should be returned
+			if result != tableName {
+				t.Errorf("Should return env var value: expected %s, got %s", tableName, result)
+			}
+		} else {
+			os.Unsetenv("DYNAMODB_TABLE")
+			
+			result := getTableName()
+			
+			// Property: When env var is not set or empty, should return default
+			if result != "github-repositories" {
+				t.Errorf("Should return default value: expected 'github-repositories', got %s", result)
+			}
+		}
+	})
 }

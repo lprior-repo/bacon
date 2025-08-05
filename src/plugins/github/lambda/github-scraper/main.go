@@ -92,7 +92,7 @@ func createAuthenticatedRequest(ctx context.Context, url string) (*http.Request,
 }
 
 func executeHTTPRequest(req *http.Request) (*http.Response, error) {
-	client := &http.Client{Timeout: 30 / time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 	return client.Do(req)
 }
 

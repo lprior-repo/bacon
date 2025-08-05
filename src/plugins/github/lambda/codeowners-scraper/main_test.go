@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"pgregory.net/rapid"
 	"bacon/src/plugins/github/types"
 	common "bacon/src/shared"
 )
@@ -1898,4 +1899,602 @@ func TestProductionScenarios(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Property-based testing functions using rapid testing approach
+// TestValidateEvent_Properties validates event validation with random event data
+func TestValidateEvent_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate random event data
+		organization := rapid.String().Draw(t, "organization")
+		batchSize := rapid.Int().Draw(t, "batch_size")
+		cursor := rapid.String().Draw(t, "cursor")
+		
+		event := types.Event{
+			Organization: organization,
+			BatchSize:    batchSize,
+			Cursor:       cursor,
+		}
+		
+		result, err := validateEvent(event)
+		
+		// Property: validateEvent never returns errors
+		if err != nil {
+			t.Fatalf("validateEvent should never return error, got: %v", err)
+		}
+		
+		// Property: Cursor is always preserved
+		if result.Cursor != event.Cursor {
+			t.Errorf("Cursor should be preserved: got %s, want %s", result.Cursor, event.Cursor)
+		}
+		
+		// Property: Empty organization triggers default
+		if event.Organization == "" {
+			if result.Organization != "your-company" {
+				t.Errorf("Empty organization should default to 'your-company', got: %s", result.Organization)
+			}
+		} else {
+			if result.Organization != event.Organization {
+				t.Errorf("Non-empty organization should be preserved: got %s, want %s", result.Organization, event.Organization)
+			}
+		}
+		
+		// Property: Zero batch size triggers default
+		if event.BatchSize == 0 {
+			if result.BatchSize != 100 {
+				t.Errorf("Zero batch size should default to 100, got: %d", result.BatchSize)
+			}
+		} else {
+			if result.BatchSize != event.BatchSize {
+				t.Errorf("Non-zero batch size should be preserved: got %d, want %d", result.BatchSize, event.BatchSize)
+			}
+		}
+	})
+}
+
+// TestInitializeContext_Properties validates context initialization with generated parameters
+func TestInitializeContext_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate random event data with boundary conditions
+		organization := rapid.StringN(0, 1000, -1).Draw(t, "organization")
+		batchSize := rapid.IntRange(-2147483648, 2147483647).Draw(t, "batch_size")
+		cursor := rapid.StringN(0, 5000, -1).Draw(t, "cursor")
+		
+		event := types.Event{
+			Organization: organization,
+			BatchSize:    batchSize,
+			Cursor:       cursor,
+		}
+		
+		result, err := initializeContext(event)
+		
+		// Property: initializeContext never returns errors
+		if err != nil {
+			t.Fatalf("initializeContext should never return error, got: %v", err)
+		}
+		
+		// Property: All event data is preserved exactly
+		if result.Organization != event.Organization {
+			t.Errorf("Organization should be preserved: got %s, want %s", result.Organization, event.Organization)
+		}
+		if result.BatchSize != event.BatchSize {
+			t.Errorf("BatchSize should be preserved: got %d, want %d", result.BatchSize, event.BatchSize)
+		}
+		if result.Cursor != event.Cursor {
+			t.Errorf("Cursor should be preserved: got %s, want %s", result.Cursor, event.Cursor)
+		}
+	})
+}
+
+// TestBuildOwnershipDataStep_Properties validates ownership data building with property validation
+func TestBuildOwnershipDataStep_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate random event with extreme values
+		organization := rapid.OneOf(
+			rapid.Just(""),
+			rapid.StringMatching("[a-zA-Z0-9_-]+"),
+			rapid.StringN(0, 2000, -1),
+		).Draw(t, "organization")
+		
+		batchSize := rapid.OneOf(
+			rapid.Just(0),
+			rapid.IntRange(-1000000, 1000000),
+			rapid.Just(-2147483648),
+			rapid.Just(2147483647),
+		).Draw(t, "batch_size")
+		
+		cursor := rapid.OneOf(
+			rapid.Just(""),
+			rapid.StringMatching("[a-zA-Z0-9+/=]+"),
+			rapid.StringN(0, 10000, -1),
+		).Draw(t, "cursor")
+		
+		event := types.Event{
+			Organization: organization,
+			BatchSize:    batchSize,
+			Cursor:       cursor,
+		}
+		
+		result, err := buildOwnershipDataStep(event)
+		
+		// Property: buildOwnershipDataStep never returns errors
+		if err != nil {
+			t.Fatalf("buildOwnershipDataStep should never return error, got: %v", err)
+		}
+		
+		// Property: All input data is preserved exactly
+		if result.Organization != event.Organization {
+			t.Errorf("Organization preservation failed: got %s, want %s", result.Organization, event.Organization)
+		}
+		if result.BatchSize != event.BatchSize {
+			t.Errorf("BatchSize preservation failed: got %d, want %d", result.BatchSize, event.BatchSize)
+		}
+		if result.Cursor != event.Cursor {
+			t.Errorf("Cursor preservation failed: got %s, want %s", result.Cursor, event.Cursor)
+		}
+	})
+}
+
+// TestPipelineProcessing_Properties tests pipeline processing with random event data
+func TestPipelineProcessing_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate diverse event scenarios
+		organization := rapid.OneOf(
+			rapid.Just(""),
+			rapid.Just("test-org"),
+			rapid.StringMatching("[a-zA-Z0-9_-]{1,50}"),
+			rapid.StringN(100, 1000, -1),
+		).Draw(t, "organization")
+		
+		batchSize := rapid.OneOf(
+			rapid.Just(0),
+			rapid.IntRange(1, 1000),
+			rapid.IntRange(-1000, -1),
+			rapid.IntRange(1001, 999999),
+		).Draw(t, "batch_size")
+		
+		cursor := rapid.OneOf(
+			rapid.Just(""),
+			rapid.StringMatching("[a-zA-Z0-9+/=]{10,100}"),
+			rapid.StringN(0, 50, -1),
+		).Draw(t, "cursor")
+		
+		originalEvent := types.Event{
+			Organization: organization,
+			BatchSize:    batchSize,
+			Cursor:       cursor,
+		}
+		
+		// Test pipeline step sequence
+		step1Result, err := validateEvent(originalEvent)
+		if err != nil {
+			t.Fatalf("Pipeline step 1 (validateEvent) failed: %v", err)
+		}
+		
+		step2Result, err := initializeContext(step1Result)
+		if err != nil {
+			t.Fatalf("Pipeline step 2 (initializeContext) failed: %v", err)
+		}
+		
+		step3Result, err := buildOwnershipDataStep(step2Result)
+		if err != nil {
+			t.Fatalf("Pipeline step 3 (buildOwnershipDataStep) failed: %v", err)
+		}
+		
+		// Property: Cursor is preserved through entire pipeline
+		if step3Result.Cursor != originalEvent.Cursor {
+			t.Errorf("Cursor not preserved through pipeline: got %s, want %s", step3Result.Cursor, originalEvent.Cursor)
+		}
+		
+		// Property: Organization follows validation rules through pipeline
+		expectedOrg := originalEvent.Organization
+		if originalEvent.Organization == "" {
+			expectedOrg = "your-company"
+		}
+		if step3Result.Organization != expectedOrg {
+			t.Errorf("Organization not handled correctly through pipeline: got %s, want %s", step3Result.Organization, expectedOrg)
+		}
+		
+		// Property: BatchSize follows validation rules through pipeline
+		expectedBatch := originalEvent.BatchSize
+		if originalEvent.BatchSize == 0 {
+			expectedBatch = 100
+		}
+		if step3Result.BatchSize != expectedBatch {
+			t.Errorf("BatchSize not handled correctly through pipeline: got %d, want %d", step3Result.BatchSize, expectedBatch)
+		}
+	})
+}
+
+// TestFetchRepositoriesStep_Properties tests repository fetching with generated parameters
+func TestFetchRepositoriesStep_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate valid GitHub organization names and batch sizes
+		organization := rapid.OneOf(
+			rapid.StringMatching("[a-zA-Z0-9_-]{1,39}"),
+			rapid.Just(""),
+			rapid.StringMatching("[a-zA-Z0-9_-]{40,100}"), // Over GitHub limit
+		).Draw(t, "organization")
+		
+		batchSize := rapid.OneOf(
+			rapid.IntRange(1, 100),
+			rapid.Just(0),
+			rapid.IntRange(-100, -1),
+			rapid.IntRange(101, 1000),
+		).Draw(t, "batch_size")
+		
+		cursor := rapid.OneOf(
+			rapid.Just(""),
+			rapid.StringMatching("[a-zA-Z0-9+/=]{10,100}"),
+			rapid.StringN(1000, 5000, -1), // Very long cursor
+		).Draw(t, "cursor")
+		
+		event := types.Event{
+			Organization: organization,
+			BatchSize:    batchSize,
+			Cursor:       cursor,
+		}
+		
+		result, err := fetchRepositoriesStep(event)
+		
+		// Property: Function should fail at AWS config or GitHub token step
+		if err == nil {
+			t.Error("fetchRepositoriesStep should fail without proper AWS configuration")
+		}
+		
+		// Property: Error should be descriptive with proper wrapping
+		if err != nil {
+			errorMsg := err.Error()
+			if !strings.Contains(errorMsg, "failed to") {
+				t.Errorf("Error should be properly wrapped with context: %v", err)
+			}
+			
+			// Should fail at AWS config or GitHub token step
+			if !strings.Contains(errorMsg, "AWS config") && !strings.Contains(errorMsg, "GitHub token") {
+				t.Errorf("Error should indicate specific failure point: %v", err)
+			}
+		}
+		
+		// Property: Event data should be preserved even on error
+		if result.Organization != event.Organization {
+			t.Errorf("Organization should be preserved on error: got %s, want %s", result.Organization, event.Organization)
+		}
+		if result.BatchSize != event.BatchSize {
+			t.Errorf("BatchSize should be preserved on error: got %d, want %d", result.BatchSize, event.BatchSize)
+		}
+		if result.Cursor != event.Cursor {
+			t.Errorf("Cursor should be preserved on error: got %s, want %s", result.Cursor, event.Cursor)
+		}
+	})
+}
+
+// TestProcessRepositoriesStep_Properties tests repository processing with edge cases
+func TestProcessRepositoriesStep_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate edge case scenarios
+		organization := rapid.OneOf(
+			rapid.StringMatching("[a-zA-Z0-9_-]+"),
+			rapid.Just(""),
+			rapid.StringN(0, 500, -1),
+		).Draw(t, "organization")
+		
+		batchSize := rapid.OneOf(
+			rapid.IntRange(1, 100),
+			rapid.Just(0),
+			rapid.IntRange(-1000000, 1000000),
+		).Draw(t, "batch_size")
+		
+		cursor := rapid.StringN(0, 1000, -1).Draw(t, "cursor")
+		
+		event := types.Event{
+			Organization: organization,
+			BatchSize:    batchSize,
+			Cursor:       cursor,
+		}
+		
+		result, err := processRepositoriesStep(event)
+		
+		// Property: Function may succeed or fail but should handle errors gracefully
+		if err != nil {
+			// Error should be returned directly from AWS config, not wrapped
+			errorMsg := err.Error()
+			if strings.Contains(errorMsg, "step") && strings.Contains(errorMsg, "failed") {
+				t.Error("processRepositoriesStep should not wrap AWS config errors")
+			}
+		}
+		
+		// Property: Event structure is always preserved
+		if result.Organization != event.Organization {
+			t.Errorf("Organization should be preserved: got %s, want %s", result.Organization, event.Organization)
+		}
+		if result.BatchSize != event.BatchSize {
+			t.Errorf("BatchSize should be preserved: got %d, want %d", result.BatchSize, event.BatchSize)
+		}
+		if result.Cursor != event.Cursor {
+			t.Errorf("Cursor should be preserved: got %s, want %s", result.Cursor, event.Cursor)
+		}
+	})
+}
+
+// TestHandleRequest_Properties validates HandleRequest with comprehensive edge cases
+func TestHandleRequest_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate diverse event scenarios for end-to-end testing
+		organization := rapid.OneOf(
+			rapid.StringMatching("[a-zA-Z0-9_-]{1,50}"),
+			rapid.Just(""),
+			rapid.StringN(100, 500, -1),
+			rapid.StringMatching(".*[üñíçødé].*"), // Unicode characters
+		).Draw(t, "organization")
+		
+		batchSize := rapid.OneOf(
+			rapid.IntRange(1, 1000),
+			rapid.Just(0),
+			rapid.IntRange(-1000000, -1),
+			rapid.IntRange(1001, 2147483647),
+		).Draw(t, "batch_size")
+		
+		cursor := rapid.OneOf(
+			rapid.Just(""),
+			rapid.StringMatching("[a-zA-Z0-9+/=]+"),
+			rapid.StringN(0, 10000, -1),
+		).Draw(t, "cursor")
+		
+		event := types.Event{
+			Organization: organization,
+			BatchSize:    batchSize,
+			Cursor:       cursor,
+		}
+		
+		ctx, cleanup := common.TestContext("property-test")
+		defer cleanup()
+		
+		response, err := HandleRequest(ctx, event)
+		
+		// Property: Should fail at GitHub integration without proper configuration
+		if err == nil {
+			t.Error("HandleRequest should fail without proper AWS/GitHub configuration")
+		}
+		
+		// Property: Response should be empty string on error
+		if err != nil && response != "" {
+			t.Errorf("Response should be empty on error, got: %s", response)
+		}
+		
+		// Property: Error should not be related to JSON marshaling or pipeline creation
+		if err != nil {
+			errorMsg := err.Error()
+			if strings.Contains(errorMsg, "json") {
+				t.Errorf("Unexpected JSON-related error: %v", err)
+			}
+			if strings.Contains(errorMsg, "pipeline") || strings.Contains(errorMsg, "nil") {
+				t.Errorf("Error suggests pipeline creation failed: %v", err)
+			}
+		}
+	})
+}
+
+// TestMutationScenarios_Properties tests mutation testing scenarios for edge cases
+func TestMutationScenarios_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Test various mutation scenarios that could break the code
+		
+		// Scenario 1: Empty arrays and overflow conditions
+		emptyEvent := types.Event{
+			Organization: "",
+			BatchSize:    0,
+			Cursor:       "",
+		}
+		
+		// Test that empty event is handled properly through validation
+		validated, err := validateEvent(emptyEvent)
+		if err != nil {
+			t.Fatalf("Empty event validation failed: %v", err)
+		}
+		
+		// Property: Defaults should be applied
+		if validated.Organization != "your-company" {
+			t.Error("Default organization not applied for empty event")
+		}
+		if validated.BatchSize != 100 {
+			t.Error("Default batch size not applied for empty event")
+		}
+		
+		// Scenario 2: Boundary value testing with extreme inputs
+		extremeOrg := rapid.StringN(0, 10000, -1).Draw(t, "extreme_org")
+		extremeBatch := rapid.IntRange(-2147483648, 2147483647).Draw(t, "extreme_batch")
+		extremeCursor := rapid.StringN(0, 50000, -1).Draw(t, "extreme_cursor")
+		
+		extremeEvent := types.Event{
+			Organization: extremeOrg,
+			BatchSize:    extremeBatch,
+			Cursor:       extremeCursor,
+		}
+		
+		// Test that extreme values don't break the processing chain
+		step1, err := validateEvent(extremeEvent)
+		if err != nil {
+			t.Fatalf("Extreme event validation failed: %v", err)
+		}
+		
+		step2, err := initializeContext(step1)
+		if err != nil {
+			t.Fatalf("Extreme event context initialization failed: %v", err)
+		}
+		
+		step3, err := buildOwnershipDataStep(step2)
+		if err != nil {
+			t.Fatalf("Extreme event ownership data building failed: %v", err)
+		}
+		
+		// Property: Data integrity maintained through extreme processing
+		if step3.Cursor != extremeEvent.Cursor {
+			t.Error("Extreme cursor value not preserved through processing")
+		}
+		
+		// Scenario 3: Special characters and encoding issues
+		specialChars := rapid.OneOf(
+			rapid.StringMatching(".*[\\n\\r\\t].*"),
+			rapid.StringMatching(".*[\\x00-\\x1f].*"),
+			rapid.StringMatching(".*[üñíçødé€£¥].*"),
+		).Draw(t, "special_chars")
+		
+		specialEvent := types.Event{
+			Organization: specialChars,
+			BatchSize:    42,
+			Cursor:       specialChars,
+		}
+		
+		// Test special character handling
+		processed, err := validateEvent(specialEvent)
+		if err != nil {
+			t.Fatalf("Special character event validation failed: %v", err)
+		}
+		
+		// Property: Special characters preserved (not sanitized unless empty)
+		if specialEvent.Organization != "" && processed.Organization != specialEvent.Organization {
+			t.Error("Special characters in organization should be preserved when non-empty")
+		}
+		if processed.Cursor != specialEvent.Cursor {
+			t.Error("Special characters in cursor should always be preserved")
+		}
+	})
+}
+
+// TestConcurrentPipelineProcessing_Properties validates thread safety and concurrent access
+func TestConcurrentPipelineProcessing_Properties(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping concurrent testing in short mode")
+	}
+	
+	rapid.Check(t, func(t *rapid.T) {
+		numGoroutines := rapid.IntRange(2, 20).Draw(t, "goroutines")
+		
+		// Generate base event for concurrent processing
+		baseOrg := rapid.StringMatching("[a-zA-Z0-9_-]+").Draw(t, "base_org")
+		baseBatch := rapid.IntRange(1, 100).Draw(t, "base_batch")
+		
+		results := make(chan error, numGoroutines)
+		
+		for i := 0; i < numGoroutines; i++ {
+			go func(id int) {
+				// Each goroutine processes with slight variations
+				event := types.Event{
+					Organization: fmt.Sprintf("%s-%d", baseOrg, id),
+					BatchSize:    baseBatch + id,
+					Cursor:       fmt.Sprintf("cursor-%d", id),
+				}
+				
+				// Test concurrent pipeline processing
+				validated, err := validateEvent(event)
+				if err != nil {
+					results <- fmt.Errorf("concurrent validation failed for goroutine %d: %w", id, err)
+					return
+				}
+				
+				initialized, err := initializeContext(validated)
+				if err != nil {
+					results <- fmt.Errorf("concurrent initialization failed for goroutine %d: %w", id, err)
+					return
+				}
+				
+				processed, err := buildOwnershipDataStep(initialized)
+				if err != nil {
+					results <- fmt.Errorf("concurrent processing failed for goroutine %d: %w", id, err)
+					return
+				}
+				
+				// Verify data integrity in concurrent environment
+				if processed.Organization != event.Organization {
+					results <- fmt.Errorf("concurrent data corruption in goroutine %d", id)
+					return
+				}
+				
+				results <- nil
+			}(i)
+		}
+		
+		// Collect results
+		var errors []error
+		for i := 0; i < numGoroutines; i++ {
+			if err := <-results; err != nil {
+				errors = append(errors, err)
+			}
+		}
+		
+		// Property: No errors should occur in concurrent processing
+		if len(errors) > 0 {
+			t.Errorf("Found %d errors in concurrent processing: %v", len(errors), errors[0])
+		}
+	})
+}
+
+// TestErrorHandlingResilience_Properties tests comprehensive error handling patterns
+func TestErrorHandlingResilience_Properties(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		// Generate edge cases that might cause errors in other systems
+		problematicOrg := rapid.OneOf(
+			rapid.Just(""),
+			rapid.StringN(10000, 50000, -1), // Very long string
+			rapid.StringMatching(".*[\\x00-\\x1f].*"), // Control characters
+		).Draw(t, "problematic_org")
+		
+		problematicBatch := rapid.OneOf(
+			rapid.Just(-2147483648), // Min int32
+			rapid.Just(2147483647),  // Max int32
+			rapid.IntRange(-1000000, 1000000),
+		).Draw(t, "problematic_batch")
+		
+		problematicCursor := rapid.OneOf(
+			rapid.StringN(0, 100000, -1), // Very long cursor
+			rapid.StringMatching(".*[\\n\\r\\t\\x00].*"), // Special chars
+		).Draw(t, "problematic_cursor")
+		
+		event := types.Event{
+			Organization: problematicOrg,
+			BatchSize:    problematicBatch,
+			Cursor:       problematicCursor,
+		}
+		
+		// Property: Core functions should be resilient to problematic inputs
+		
+		// Test validateEvent resilience
+		validated, err := validateEvent(event)
+		if err != nil {
+			t.Fatalf("validateEvent should be resilient to problematic inputs: %v", err)
+		}
+		
+		// Test initializeContext resilience
+		initialized, err := initializeContext(validated)
+		if err != nil {
+			t.Fatalf("initializeContext should be resilient to problematic inputs: %v", err)
+		}
+		
+		// Test buildOwnershipDataStep resilience
+		processed, err := buildOwnershipDataStep(initialized)
+		if err != nil {
+			t.Fatalf("buildOwnershipDataStep should be resilient to problematic inputs: %v", err)
+		}
+		
+		// Property: Data integrity maintained even with problematic inputs
+		expectedOrg := event.Organization
+		if event.Organization == "" {
+			expectedOrg = "your-company"
+		}
+		if processed.Organization != expectedOrg {
+			t.Error("Organization handling failed with problematic input")
+		}
+		
+		expectedBatch := event.BatchSize
+		if event.BatchSize == 0 {
+			expectedBatch = 100
+		}
+		if processed.BatchSize != expectedBatch {
+			t.Error("BatchSize handling failed with problematic input")
+		}
+		
+		if processed.Cursor != event.Cursor {
+			t.Error("Cursor preservation failed with problematic input")
+		}
+	})
 }

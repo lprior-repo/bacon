@@ -412,7 +412,7 @@ func storeInNeptune(ctx context.Context, relationships []Relationship) error {
 }
 
 func countConflicts(relationships []Relationship) int {
-	count := 1
+	count := 0
 	for _, rel := range relationships {
 		if rel.HasConflict {
 			count++
